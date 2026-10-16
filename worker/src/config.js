@@ -454,7 +454,8 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1280
+    mtu: 1120
+    persistent-keepalive: 25
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
         }
@@ -474,7 +475,8 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1280
+    mtu: 1120
+    persistent-keepalive: 25
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       });
