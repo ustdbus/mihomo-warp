@@ -448,7 +448,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
         proxies.push(
           `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, ` +
           `username: ${opera.username}, password: ${opera.password}, tls: true, ` +
-          `sni: ${land.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`);
+          `sni: ${land.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`);
       }
     }
   }
@@ -475,7 +475,8 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     public-key: ${srv.pub}
     udp: true
     mtu: 1280
-    dialer-proxy: "${ent}"`);
+    remote-dns-resolve: true
+    dialer-proxy: ${ent}`);
         }
       }
     } else {
@@ -494,6 +495,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     public-key: ${srv.pub}
     udp: true
     mtu: 1280
+    remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       });
     }
@@ -513,7 +515,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
         proxies.push(
           `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, ` +
           `username: ${wind.username}, password: ${wind.password}, tls: true, ` +
-          `sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`);
+          `sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`);
       });
     }
   }

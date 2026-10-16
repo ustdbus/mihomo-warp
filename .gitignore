@@ -17,3 +17,10 @@ local_results/
 __pycache__/
 xiaohe/
 warp-masque-actions/
+worker/mihomo*
+worker/*_test*
+worker/test_*
+worker/setup_mihomo.sh
+worker/persistent_ssh.py
+worker/direct_upload.py
+worker/upload_mihomo.py

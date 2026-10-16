@@ -926,7 +926,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
         const name = `${land.tag}@${ent}`;
         (byLoc[land.loc] ||= []).push(name);
         proxies.push(
-          `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, username: ${opera.username}, password: ${opera.password}, tls: true, sni: ${land.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`
+          `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, username: ${opera.username}, password: ${opera.password}, tls: true, sni: ${land.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`
         );
       }
     }
@@ -951,7 +951,8 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     public-key: ${srv.pub}
     udp: true
     mtu: 1280
-    dialer-proxy: "${ent}"`);
+    remote-dns-resolve: true
+    dialer-proxy: ${ent}`);
         }
       }
     } else {
@@ -969,6 +970,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     public-key: ${srv.pub}
     udp: true
     mtu: 1280
+    remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       });
     }
@@ -984,7 +986,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
         windNames.push(name);
         (windByLoc[srv.loc] = windByLoc[srv.loc] || []).push(name);
         proxies.push(
-          `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, username: ${wind.username}, password: ${wind.password}, tls: true, sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`
+          `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, username: ${wind.username}, password: ${wind.password}, tls: true, sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`
         );
       });
     }
