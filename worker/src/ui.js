@@ -336,15 +336,19 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     </div>
 
     <div class="sec">
-      <div class="sec-t">节点</div>
-      <div class="grid">
-        <div class="cell"><div class="n">${stat.combos ?? "—"}</div><div class="l">组合节点</div></div>
+      <div class="sec-t">接入与总计</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+        <div class="cell"><div class="n">${stat.combos ?? "—"}</div><div class="l">总组合节点</div></div>
         <div class="cell"><div class="n">${protocolMode === "wg" ? (stat.wgEntries ?? stat.entries ?? "48") : "—"}</div><div class="l">WireGuard 接入点</div></div>
         <div class="cell"><div class="n">${protocolMode === "masque" ? (stat.msEntries ?? stat.entries ?? "57") : "—"}</div><div class="l">MASQUE 接入点</div></div>
-        <div class="cell"><div class="n">${!enableOpera ? "已关闭" : (stat.landings ?? "—")}</div><div class="l">Opera 落地</div></div>
         <div class="cell"><div class="n">${!enableWarpDirect ? "已关闭" : (stat.entries ?? "—")}</div><div class="l">WARP 直连</div></div>
-        <div class="cell"><div class="n">${!enableProton ? "已关闭" : (stat.proton || "—")}</div><div class="l">Proton 落地</div></div>
-        <div class="cell"><div class="n">${!enableWind ? "已关闭" : (stat.wind || "—")}</div><div class="l">Windscribe 落地</div></div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="sec-t">落地服务</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        <div class="cell"><div class="n">${!enableOpera ? "已关闭" : (stat.landings ? `${stat.landings} 台` : "—")}</div><div class="l">Opera 落地</div></div>
+        <div class="cell"><div class="n">${!enableProton ? "已关闭" : ((stat.protonServers || (protonCred && protonCred.servers && protonCred.servers.length)) ? `${stat.protonServers || protonCred.servers.length} 台` : "—")}</div><div class="l">Proton 落地</div></div>
+        <div class="cell"><div class="n">${!enableWind ? "已关闭" : (stat.windServers ? `${stat.windServers} 台` : (windInfo && windInfo.servers ? `${windInfo.servers} 台` : "—"))}</div><div class="l">Windscribe 落地</div></div>
       </div>
       <div class="note">
         每个开启的落地和前置接入点进行笛卡尔积组合，任一路径故障都有冗余节点兜底。

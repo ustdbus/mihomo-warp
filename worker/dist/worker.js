@@ -1121,6 +1121,10 @@ ${rules}
   - GEOIP,CN,\u{1F3AF} \u5168\u7403\u76F4\u8FDE
   - MATCH,\u{1F41F} \u6F0F\u7F51\u4E4B\u9C7C
 `;
+  const operaCombos = combos;
+  const protonCombos = protonNames.length;
+  const windCombos = windNames.length;
+  const totalCombos = operaCombos + protonCombos + windCombos;
   return {
     yaml,
     protocolMode,
@@ -1129,8 +1133,11 @@ ${rules}
     msEntries: protocolMode === "masque" ? entries.length : 0,
     landings: enableOpera && opera?.landings ? opera.landings.length : 0,
     combos,
-    proton: protonNames.length,
-    wind: windNames.length,
+    totalCombos,
+    proton: protonCombos,
+    wind: windCombos,
+    protonServers: enableProton && proton?.servers ? proton.servers.length : 0,
+    windServers: enableWind && wind?.servers ? wind.servers.length : 0,
     enableOpera,
     enableProton,
     enableWarpDirect,
@@ -1582,15 +1589,19 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     </div>
 
     <div class="sec">
-      <div class="sec-t">\u8282\u70B9</div>
-      <div class="grid">
-        <div class="cell"><div class="n">${stat.combos ?? "\u2014"}</div><div class="l">\u7EC4\u5408\u8282\u70B9</div></div>
+      <div class="sec-t">\u63A5\u5165\u4E0E\u603B\u8BA1</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+        <div class="cell"><div class="n">${stat.combos ?? "\u2014"}</div><div class="l">\u603B\u7EC4\u5408\u8282\u70B9</div></div>
         <div class="cell"><div class="n">${protocolMode === "wg" ? stat.wgEntries ?? stat.entries ?? "48" : "\u2014"}</div><div class="l">WireGuard \u63A5\u5165\u70B9</div></div>
         <div class="cell"><div class="n">${protocolMode === "masque" ? stat.msEntries ?? stat.entries ?? "57" : "\u2014"}</div><div class="l">MASQUE \u63A5\u5165\u70B9</div></div>
-        <div class="cell"><div class="n">${!enableOpera ? "\u5DF2\u5173\u95ED" : stat.landings ?? "\u2014"}</div><div class="l">Opera \u843D\u5730</div></div>
         <div class="cell"><div class="n">${!enableWarpDirect ? "\u5DF2\u5173\u95ED" : stat.entries ?? "\u2014"}</div><div class="l">WARP \u76F4\u8FDE</div></div>
-        <div class="cell"><div class="n">${!enableProton ? "\u5DF2\u5173\u95ED" : stat.proton || "\u2014"}</div><div class="l">Proton \u843D\u5730</div></div>
-        <div class="cell"><div class="n">${!enableWind ? "\u5DF2\u5173\u95ED" : stat.wind || "\u2014"}</div><div class="l">Windscribe \u843D\u5730</div></div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="sec-t">\u843D\u5730\u670D\u52A1</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        <div class="cell"><div class="n">${!enableOpera ? "\u5DF2\u5173\u95ED" : stat.landings ? `${stat.landings} \u53F0` : "\u2014"}</div><div class="l">Opera \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${!enableProton ? "\u5DF2\u5173\u95ED" : stat.protonServers || protonCred && protonCred.servers && protonCred.servers.length ? `${stat.protonServers || protonCred.servers.length} \u53F0` : "\u2014"}</div><div class="l">Proton \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${!enableWind ? "\u5DF2\u5173\u95ED" : stat.windServers ? `${stat.windServers} \u53F0` : windInfo && windInfo.servers ? `${windInfo.servers} \u53F0` : "\u2014"}</div><div class="l">Windscribe \u843D\u5730</div></div>
       </div>
       <div class="note">
         \u6BCF\u4E2A\u5F00\u542F\u7684\u843D\u5730\u548C\u524D\u7F6E\u63A5\u5165\u70B9\u8FDB\u884C\u7B1B\u5361\u5C14\u79EF\u7EC4\u5408\uFF0C\u4EFB\u4E00\u8DEF\u5F84\u6545\u969C\u90FD\u6709\u5197\u4F59\u8282\u70B9\u515C\u5E95\u3002
@@ -2015,7 +2026,10 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       wgEntries: cfg.wgEntries,
       msEntries: cfg.msEntries,
       landings: cfg.landings,
-      combos: cfg.combos,
+      protonServers: cfg.protonServers || (proton?.servers?.length || 0),
+      windServers: cfg.windServers || (wind?.servers?.length || 0),
+      combos: cfg.totalCombos ?? cfg.combos,
+      operaCombos: cfg.combos,
       proton: cfg.proton || 0,
       wind: cfg.wind || 0
     },

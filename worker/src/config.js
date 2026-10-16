@@ -661,6 +661,11 @@ ${rules}
   - MATCH,🐟 漏网之鱼
 `;
 
+  const operaCombos = combos;
+  const protonCombos = protonNames.length;
+  const windCombos = windNames.length;
+  const totalCombos = operaCombos + protonCombos + windCombos;
+
   return {
     yaml,
     protocolMode,
@@ -669,8 +674,11 @@ ${rules}
     msEntries: protocolMode === "masque" ? entries.length : 0,
     landings: (enableOpera && opera?.landings) ? opera.landings.length : 0,
     combos,
-    proton: protonNames.length,
-    wind: windNames.length,
+    totalCombos,
+    proton: protonCombos,
+    wind: windCombos,
+    protonServers: (enableProton && proton?.servers) ? proton.servers.length : 0,
+    windServers: (enableWind && wind?.servers) ? wind.servers.length : 0,
     enableOpera,
     enableProton,
     enableWarpDirect,
