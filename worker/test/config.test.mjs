@@ -166,5 +166,52 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   t("AI服务 能选 WARP直连", ai.includes("WARP直连"));
 }
 
+// ---- WireGuard (AWG 混淆) 专属模式及笛卡尔积测试 ----
+{
+  const rWg = buildConfig(warp, opera, {
+    privateKey: "PK", expiresAt: Math.floor(Date.now()/1000)+604800,
+    servers: [
+      { name: "日本1", cc: "JP", ip: "1.1.1.1", port: 51820, pub: "A" },
+      { name: "美国1", cc: "US", ip: "2.2.2.1", port: 51820, pub: "B" },
+    ],
+  }, null, { protocolMode: "wg" });
+
+  t("WG模式接入点为 48 个", rWg.entries === 48);
+  t("WG模式包含 Amnezia 混淆参数", rWg.yaml.includes("amnezia-wg-option:"));
+  t("WG模式包含 jc/jmin/jmax", rWg.yaml.includes("jc: 4") && rWg.yaml.includes("jmin: 40"));
+  // 48 个 AWG 端点 x 2 个 Opera 落地 = 96 个 Opera 组合
+  t("WG模式 Opera 组合为 96 个 (48 x 2)", rWg.combos === 96);
+  // 48 个 AWG 端点 x 2 个 Proton 落地 = 96 个 Proton 全组合
+  t("WG模式 Proton 落地笛卡尔积全组合 (48 x 2 = 96)", rWg.proton === 96);
+  t("WG模式 Proton 组合节点名带 @", rWg.yaml.includes("日本1@AWG-香港1"));
+
+  // 自动选择组 proxies 为叶子节点，不能包含策略组名
+  const autoGroup = rWg.yaml.split("  - name: ♻️ 自动选择")[1].split("\n  - name:")[0];
+  t("自动选择组不嵌套策略组名", !autoGroup.includes("亚洲线路") && !autoGroup.includes("WARP直连"));
+}
+
+// ---- 4 项功能独立关闭开关测试 ----
+{
+  const rOff = buildConfig(warp, opera, {
+    privateKey: "PK", expiresAt: Math.floor(Date.now()/1000)+604800,
+    servers: [{ name: "JP1", cc: "JP", ip: "1.1.1.1", port: 51820, pub: "A" }],
+  }, {
+    username: "U", password: "P",
+    servers: [{ tag: "HK", loc: "香港", host: "hk.com", port: 443 }],
+  }, {
+    protocolMode: "wg",
+    enableOpera: false,
+    enableProton: false,
+    enableWarpDirect: false,
+    enableWind: false,
+  });
+
+  t("关闭 Opera 后无 Opera 组合节点", rOff.combos === 0 && !rOff.yaml.includes("亚洲线路"));
+  t("关闭 Proton 后无 Proton 节点", rOff.proton === 0 && !rOff.yaml.includes("Proton线路"));
+  t("关闭 Windscribe 后无 WS 节点", rOff.wind === 0 && !rOff.yaml.includes("Windscribe线路"));
+  t("关闭 WARP直连 后无 WARP直连 组", !rOff.yaml.includes("  - name: WARP直连"));
+}
+
 console.log(`\n通过 ${pass} 失败 ${fail}`);
 if (fail) process.exit(1);
+

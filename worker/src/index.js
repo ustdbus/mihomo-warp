@@ -1,15 +1,15 @@
-// Opera VPN over Cloudflare WARP (MASQUE) —— Worker 版
+// Opera VPN over Cloudflare WARP (WireGuard / MASQUE) —— Worker 版
 //
 // 部署只需要绑一个 KV，密码和订阅路径都在界面上设，不用 cron。
 //
 // 职责:
 //   1. 订阅被访问时按需重建：Opera 凭据没过期就直接给缓存，
 //      过期了才重新注册。凭据有效期 4 小时（opera-proxy 的 -refresh 默认值）
-//   2. WARP 注册信息存 KV 复用，不每次重注册（设备是有限资源）
-//   3. 首次访问引导设密码，之后订阅路径、改密码都在界面里做
+//   2. WARP 注册信息存 KV 复用，二选一协议专属注册
+//   3. 首次访问引导设密码，之后订阅路径、改密码、功能开关都在界面里做
 import { registerWarp } from "./warp.js";
 import { fetchOpera } from "./opera.js";
-import { buildConfig } from "./config.js";
+import { buildConfig, parseCustomEndpoints } from "./config.js";
 import { parseBlob } from "./proton.js";
 import { fetchWindscribe, fetchSession } from "./windscribe.js";
 import { renderUI, renderLogin, renderSetup, renderNoKV } from "./ui.js";
@@ -19,21 +19,20 @@ import {
 } from "./auth.js";
 
 const K_WARP = "warp:device";     // WARP 注册信息，长期复用
-const K_CFG = "config:yaml";      // 聚合配置（套娃线路 + WARP 直连）
+const K_CFG = "config:yaml";      // 聚合配置
 const K_STATE = "state:meta";     // 状态元数据，给 UI 用
 const K_CRED = "auth:cred";       // 密码哈希 + 盐
-const K_SET = "settings";         // 订阅路径等设置
+const K_SET = "settings";         // 订阅路径及开关设置
 const K_CLAIM = "auth:claim";     // 初始化时的抢占标记
 const K_PROTON = "proton:cred";   // Proton 凭据（由流水线推送）
 const K_PUSH = "proton:token";    // 流水线的写入令牌
-const K_WIND = "wind:account";    // Windscribe 账号，长期复用（连着开户会被降额）
+const K_WIND = "wind:account";    // Windscribe 账号，长期复用
 const K_LOCK = "rebuild:lock";    // 重建锁，防并发重复注册
+const K_CUSTOM_WG = "custom:endpoints_wg"; // 自选 WireGuard 优选 IP
+const K_CUSTOM_MS = "custom:endpoints_ms"; // 自选 MASQUE 优选 IP
 const COOKIE = "om_session";
 const DEFAULT_SUB = "sub";
 
-// Opera 凭据有效期。opera-proxy 默认每 4 小时刷新一次登录和设备密码
-// （main.go: -refresh 4h），API 本身不返回真实 TTL，按这个值走。
-// 留 10 分钟余量，别卡着点过期。
 const TTL_MS = 4 * 3600 * 1000;
 const SKEW_MS = 10 * 60 * 1000;
 
@@ -56,65 +55,108 @@ const notFound = () => new Response("Not Found", { status: 404 });
 
 async function getSettings(env) {
   const s = (await env.KV.get(K_SET, "json")) || {};
-  return { subPath: s.subPath || DEFAULT_SUB };
+  return {
+    subPath: s.subPath || DEFAULT_SUB,
+    protocolMode: s.protocolMode || "wg",
+    enableOpera: s.enableOpera ?? true,
+    enableProton: s.enableProton ?? true,
+    enableWarpDirect: s.enableWarpDirect ?? true,
+    enableWind: s.enableWind ?? true,
+  };
 }
 
-/** 拿 WARP 设备信息，KV 里有就复用，没有才注册。 */
-async function getWarp(env, force = false) {
+/** 拿 WARP 设备信息。若协议不匹配或强制刷新则重新注册。 */
+async function getWarp(env, force = false, protocol = "wg") {
   if (!force) {
     const cached = await env.KV.get(K_WARP, "json");
-    if (cached && cached.privateKey) return cached;
+    if (cached && cached.privateKey && cached.protocol === protocol) {
+      return cached;
+    }
   }
-  const w = await registerWarp("cf-worker");
+  const w = await registerWarp(protocol, "cf-worker");
   await env.KV.put(K_WARP, JSON.stringify(w));
   return w;
 }
 
-/** Windscribe 账号只用流水线推来的那个，Worker 不自己开户。
- *
- * 原因：Cloudflare Worker 的出口 IP 是整个平台共享的，早就被别人拿去开过号。
- * Windscribe 认这个 IP，直接发 status=2 的降额账号（traffic_max=1MB），
- * 而 status=2 的号连 /ServerCredentials 都取不到
- * （400 errorCode 1700 "User unable to generate credentials"），
- * 也就是说降额号完全没法用，不是"额度小一点"的问题。
- *
- * 所以开户放到 GitHub Actions 上做，runner 的 IP 是干净的。
- */
 async function getWind(env) {
   const acc = await env.KV.get(K_WIND, "json");
   if (!acc || !acc.sessionAuthHash) return null;
   return await fetchWindscribe(acc);
 }
 
-/** 重建配置。WARP 复用，Opera 每次重取（凭据会过期）。 */
-async function rebuild(env, { forceWarp = false } = {}) {
-  const warp = await getWarp(env, forceWarp);
-  const opera = await fetchOpera();
-  // Proton 凭据是流水线推来的，没有就跳过，不影响其他线路
-  let proton = null;
-  const pc = await env.KV.get(K_PROTON, "json");
-  if (pc && (!pc.expiresAt || pc.expiresAt * 1000 > Date.now())) proton = pc;
-  // Windscribe 拿不到就跳过。它只是多一条线路，不该拖垮整份订阅。
-  // 但错误要留下来 —— 之前直接吞掉，管理页只能显示一句笼统的失败，
-  // 排查时完全看不出是限速、开户被拒还是别的。
-  let wind = null, windErr = null;
-  try {
-    wind = await getWind(env);
-  } catch (e) {
-    windErr = e.message;
+/** 重建配置。*/
+async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
+  let settings = await getSettings(env);
+  if (newProtocol && newProtocol !== settings.protocolMode) {
+    settings = { ...settings, protocolMode: newProtocol };
+    const curRaw = (await env.KV.get(K_SET, "json")) || {};
+    await env.KV.put(K_SET, JSON.stringify({ ...curRaw, protocolMode: newProtocol }));
   }
-  const { yaml, entries, landings, combos, proton: pn, wind: wn } =
-    buildConfig(warp, opera, proton, wind);
+
+  const protocolMode = settings.protocolMode || "wg";
+  const warp = await getWarp(env, forceWarp, protocolMode);
+
+  // 关键：若 settings.enableOpera === false，完全不调用 fetchOpera()，避免刷请求
+  let opera = { landings: [] };
+  if (settings.enableOpera !== false) {
+    opera = await fetchOpera();
+  }
+
+  let proton = null;
+  if (settings.enableProton !== false) {
+    const pc = await env.KV.get(K_PROTON, "json");
+    if (pc && (!pc.expiresAt || pc.expiresAt * 1000 > Date.now())) proton = pc;
+  }
+
+  let wind = null, windErr = null;
+  if (settings.enableWind !== false) {
+    try {
+      wind = await getWind(env);
+    } catch (e) {
+      windErr = e.message;
+    }
+  }
+
+  const rawWg = await env.KV.get(K_CUSTOM_WG);
+  const rawMs = await env.KV.get(K_CUSTOM_MS);
+  const customWgEndpoints = rawWg ? parseCustomEndpoints(rawWg, "AWG") : null;
+  const customMsEndpoints = rawMs ? parseCustomEndpoints(rawMs, "MASQUE") : null;
+
+  const cfg = buildConfig(warp, opera, proton, wind, {
+    protocolMode,
+    enableOpera: settings.enableOpera !== false,
+    enableProton: settings.enableProton !== false,
+    enableWarpDirect: settings.enableWarpDirect !== false,
+    enableWind: settings.enableWind !== false,
+    customWgEndpoints,
+    customMsEndpoints,
+  });
 
   const now = Date.now();
   const state = {
     updatedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + TTL_MS).toISOString(),
-    stats: { entries, landings, combos, proton: pn || 0, wind: wn || 0 },
+    protocolMode,
+    features: {
+      enableOpera: settings.enableOpera !== false,
+      enableProton: settings.enableProton !== false,
+      enableWarpDirect: settings.enableWarpDirect !== false,
+      enableWind: settings.enableWind !== false,
+    },
+    stats: {
+      entries: cfg.entries,
+      wgEntries: cfg.wgEntries,
+      msEntries: cfg.msEntries,
+      landings: cfg.landings,
+      combos: cfg.combos,
+      proton: cfg.proton || 0,
+      wind: cfg.wind || 0,
+    },
     protonExpiresAt: proton ? proton.expiresAt : null,
-    wind: wind ? { userId: wind.account.userId, servers: wn || 0 } : null,
+    wind: wind ? { userId: wind.account.userId, servers: cfg.wind || 0 } : null,
     windErr,
     warp: {
+      protocol: warp.protocol || protocolMode,
       deviceId: warp.deviceId,
       ipv4: warp.ipv4,
       ipv6: warp.ipv6,
@@ -122,23 +164,16 @@ async function rebuild(env, { forceWarp = false } = {}) {
     },
   };
 
-  await env.KV.put(K_CFG, yaml);
+  await env.KV.put(K_CFG, cfg.yaml);
   await env.KV.put(K_STATE, JSON.stringify(state));
   return state;
 }
 
-/** 凭据是否还在有效期内。没有配置或没有到期时间都算过期。 */
 function isFresh(state) {
   if (!state || !state.expiresAt) return false;
   return Date.parse(state.expiresAt) - SKEW_MS > Date.now();
 }
 
-/** 按需重建。没过期直接返回缓存，过期了才重新注册。
- *
- * 加锁是因为订阅可能被多个客户端同时拉，不加锁会并发注册一堆
- * Opera 账号，还可能触发风控。拿不到锁的一方用旧配置顶一下，
- * 旧配置也没有才等着。
- */
 async function ensureConfig(env) {
   const state = await env.KV.get(K_STATE, "json");
   const yaml = await env.KV.get(K_CFG);
@@ -146,7 +181,6 @@ async function ensureConfig(env) {
 
   const lock = await env.KV.get(K_LOCK);
   if (lock && Date.now() - Number(lock) < 90000) {
-    // 别人正在重建。有旧配置就先顶着，用户不至于拿不到东西
     if (yaml) return yaml;
   } else {
     await env.KV.put(K_LOCK, String(Date.now()), { expirationTtl: 120 });
@@ -165,13 +199,12 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const ip = req.headers.get("cf-connecting-ip") || "unknown";
 
-    // KV 没绑就没法工作，给个明确指引而不是报一堆栈
     if (!env || !env.KV) return html(renderNoKV(), 500);
 
     const cred = await env.KV.get(K_CRED, "json");
     const authed = cred && (await verifyToken(cred, readCookie(req, COOKIE)));
 
-    // ---- 首次使用：还没设密码 ----
+    // 首次初始化
     if (!cred) {
       if (path === "/api/setup" && req.method === "POST") {
         const body = await req.json().catch(() => ({}));
@@ -179,9 +212,6 @@ export default {
         if (pw.length < 8) return json({ ok: false, error: "密码至少 8 位" }, 400);
         if (pw !== body.confirm) return json({ ok: false, error: "两次输入不一致" }, 400);
 
-        // 抢占式竞态保护。KV 没有 CAS，check-then-put 不是原子的，
-        // 两个并发请求会都读到空。这里先写一个带随机标记的占位，
-        // 回读确认是自己写的才继续，否则说明被别人抢先了。
         const claim = crypto.randomUUID();
         if (await env.KV.get(K_CRED)) {
           return json({ ok: false, error: "密码已被设置，请刷新页面" }, 409);
@@ -213,7 +243,7 @@ export default {
     const settings = await getSettings(env);
     const subPath = "/" + settings.subPath;
 
-    // ---- 订阅。客户端带不了 cookie，用 ?token= ----
+    // 订阅链接
     if (path === subPath) {
       const t = url.searchParams.get("token") || "";
       if (!(await verifyToken(cred, t)) && !authed) return notFound();
@@ -226,7 +256,6 @@ export default {
       return new Response(yaml, {
         headers: {
           "content-type": "text/yaml; charset=utf-8",
-          // 文件名不加引号：部分客户端不解析引号，会把 \"x\" 当成文件名的一部分
           "content-disposition": "attachment; filename=opera-masque.yaml",
           "profile-update-interval": "4",
           "cache-control": "no-store",
@@ -234,13 +263,9 @@ export default {
       });
     }
 
-    // ---- 流水线推送 Proton 凭据 ----
-    // 令牌直接放在路径里，这样 Actions 只需要配一个 secret。
-    // 它只能写 Proton 凭据，动不了管理页；泄露了在管理页换一个即可。
+    // 流水线与自选端点推送
     if (path.startsWith("/push/") && req.method === "POST") {
       const tk = await env.KV.get(K_PUSH);
-      // 路径可以带类型后缀：/push/<令牌> 是 Proton，/push/<令牌>/wind 是 Windscribe。
-      // 同一个令牌收两种，Actions 那边还是只配一个 secret。
       const rest = path.slice(6);
       const slash = rest.indexOf("/");
       const got = slash < 0 ? rest : rest.slice(0, slash);
@@ -249,10 +274,30 @@ export default {
 
       const body = await req.text();
 
+      // 推送 WireGuard 自选端点
+      if (kind === "wg") {
+        await env.KV.put(K_CUSTOM_WG, body);
+        try {
+          const st = await rebuild(env);
+          return json({ ok: true, msg: "已更新 WireGuard 优选端点", entries: st.stats.entries });
+        } catch (e) {
+          return json({ ok: true, msg: "WireGuard 端点已写入，但重建配置失败：" + e.message });
+        }
+      }
+
+      // 推送 MASQUE 自选端点
+      if (kind === "ms") {
+        await env.KV.put(K_CUSTOM_MS, body);
+        try {
+          const st = await rebuild(env);
+          return json({ ok: true, msg: "已更新 MASQUE 优选端点", entries: st.stats.entries });
+        } catch (e) {
+          return json({ ok: true, msg: "MASQUE 端点已写入，但重建配置失败：" + e.message });
+        }
+      }
+
+      // 推送 Windscribe 账号
       if (kind === "wind") {
-        // Windscribe 账号由流水线在 GitHub runner 上开。
-        // Worker 自己开不了 —— CF 的出口 IP 是共享的，早被人用过，
-        // Windscribe 直接发 status=2 的降额号(1MB)，那种号连代理凭据都取不到。
         let acc;
         try {
           acc = JSON.parse(body);
@@ -274,6 +319,7 @@ export default {
         }
       }
 
+      // 默认推送 Proton 凭据
       let parsed;
       try {
         parsed = parseBlob(body);
@@ -281,7 +327,6 @@ export default {
         return json({ ok: false, error: e.message }, 400);
       }
       await env.KV.put(K_PROTON, JSON.stringify(parsed));
-      // 凭据换了，配置得重建才生效
       try {
         const st = await rebuild(env);
         return json({ ok: true, msg: `已写入 ${parsed.servers.length} 台 Proton 落地`,
@@ -291,7 +336,7 @@ export default {
       }
     }
 
-    // ---- 登录 ----
+    // 登录
     if (path === "/login" && req.method === "POST") {
       if (!(await rateLimit(env, ip))) {
         return json({ ok: false, error: "尝试过多，15 分钟后再试" }, 429);
@@ -321,29 +366,47 @@ export default {
       });
     }
 
-    // ---- 首页 ----
+    // 首页
     if (path === "/") {
       if (!authed) return html(renderLogin());
       const state = await env.KV.get(K_STATE, "json");
       const token = await signToken(cred);
       const pushToken = await env.KV.get(K_PUSH);
       const protonCred = await env.KV.get(K_PROTON, "json");
-      // 用量是实时问 Windscribe 的，问不到就不显示，不影响页面其他部分
       let windUsage = null;
       const wa = await env.KV.get(K_WIND, "json");
       if (wa && wa.sessionAuthHash) {
         try { windUsage = await fetchSession(wa); } catch { windUsage = null; }
       }
       return html(renderUI(state, url.host, subPath, token, cred,
-                           pushToken, protonCred, windUsage));
+                           pushToken, protonCred, windUsage, settings));
     }
 
-    // ---- 以下都要登录。未登录一律 404，不用 401 ----
-    // 401 会告诉探测者"这个路径存在"，等于泄露订阅路径的存在性
+    // 以下均需要认证
     if (!authed) return notFound();
 
     if (path === "/api/state") {
       return json((await env.KV.get(K_STATE, "json")) || {});
+    }
+
+    // 节点开关配置
+    if (path === "/api/settings/features" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const cur = await getSettings(env);
+      const updated = {
+        ...cur,
+        enableOpera: body.enableOpera !== undefined ? Boolean(body.enableOpera) : cur.enableOpera,
+        enableProton: body.enableProton !== undefined ? Boolean(body.enableProton) : cur.enableProton,
+        enableWarpDirect: body.enableWarpDirect !== undefined ? Boolean(body.enableWarpDirect) : cur.enableWarpDirect,
+        enableWind: body.enableWind !== undefined ? Boolean(body.enableWind) : cur.enableWind,
+      };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({ ok: true, msg: "节点开关已保存并重建配置", stats: s.stats });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
     }
 
     // 重新生成流水线的写入令牌
@@ -359,7 +422,7 @@ export default {
       await env.KV.delete(K_PROTON);
       try {
         await rebuild(env);
-      } catch { /* 重建失败不影响清除本身 */ }
+      } catch { /* ignore */ }
       return json({ ok: true, msg: "Proton 凭据已清除" });
     }
 
@@ -377,7 +440,7 @@ export default {
       return json({ ok: true, msg: `订阅路径已改为 /${p}` });
     }
 
-    // 改密码。旧 token 会因为哈希变化自动失效，所以要重新下发
+    // 改密码
     if (path === "/api/password" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       if (!(await checkPassword(cred, String(body.current || "")))) {
@@ -400,7 +463,7 @@ export default {
         });
     }
 
-    // 只换 Opera 凭据，WARP 设备保留
+    // 刷新 Opera 凭据
     if (path === "/api/refresh" && req.method === "POST") {
       try {
         const s = await rebuild(env);
@@ -410,22 +473,27 @@ export default {
       }
     }
 
-    // 重注册 WARP 设备，MASQUE 整体不通时才用
-    if (path === "/api/reset-warp" && req.method === "POST") {
+    // 重注册 WARP 设备 / 切换专属协议
+    if ((path === "/api/warp/reregister" || path === "/api/reset-warp") && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const cur = await getSettings(env);
+      const protocol = (body.protocol === "masque" || body.protocol === "wg")
+        ? body.protocol
+        : cur.protocolMode || "wg";
       try {
-        const s = await rebuild(env, { forceWarp: true });
-        return json({ ok: true, msg: `WARP 已重注册，${s.stats.combos} 个组合` });
+        const s = await rebuild(env, { forceWarp: true, newProtocol: protocol });
+        return json({ ok: true, msg: `WARP (${protocol === "masque" ? "MASQUE" : "WireGuard"}) 已重注册，${s.stats.combos} 个组合` });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }
     }
 
-    // 清掉 Windscribe 账号。换号要重跑流水线 —— Worker 自己开不出可用的号
+    // 清掉 Windscribe 账号
     if (path === "/api/wind/clear" && req.method === "POST") {
       await env.KV.delete(K_WIND);
       try {
         await rebuild(env);
-      } catch { /* 重建失败不影响清除本身 */ }
+      } catch { /* ignore */ }
       return json({ ok: true, msg: "已清除，重跑一次流水线拿新账号" });
     }
 

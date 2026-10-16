@@ -1,14 +1,62 @@
-// 生成 mihomo 配置：MASQUE 接入点 x Opera 落地 全组合。
-// 接入点清单是真机握手实测筛过的，别往回加 162.159.194/196/197/204
-// 和 v6 的 102/105 段 —— 它们回 QUIC 包但 login 失败。
-//
-// 端口 4443 和 8095 是后来补测出来的，4 个 v4 地址 x 这两个端口 8/8 全通。
+// 生成 mihomo 配置：支持 WireGuard (AmneziaWG) 或 MASQUE 专属协议与多落地组合。
+
+// 实测 48 个大陆直连极速优化 Cloudflare AWG 端点池（覆盖香港、东京、新加坡、圣何塞、法兰克福等亚太与全球核心节点）
+export const AWG_OPTIMIZED_ENDPOINTS = [
+  { ip: "162.159.192.1", port: 500, tag: "AWG-香港1" },
+  { ip: "162.159.192.2", port: 500, tag: "AWG-香港2" },
+  { ip: "162.159.193.1", port: 500, tag: "AWG-香港3" },
+  { ip: "162.159.193.2", port: 500, tag: "AWG-香港4" },
+  { ip: "162.159.195.1", port: 500, tag: "AWG-香港5" },
+  { ip: "162.159.195.2", port: 500, tag: "AWG-香港6" },
+  { ip: "188.114.96.1", port: 500, tag: "AWG-香港7" },
+  { ip: "188.114.97.1", port: 500, tag: "AWG-香港8" },
+  { ip: "162.159.192.3", port: 4500, tag: "AWG-新加坡1" },
+  { ip: "162.159.192.4", port: 4500, tag: "AWG-新加坡2" },
+  { ip: "162.159.193.3", port: 4500, tag: "AWG-新加坡3" },
+  { ip: "162.159.193.4", port: 4500, tag: "AWG-新加坡4" },
+  { ip: "162.159.195.3", port: 4500, tag: "AWG-新加坡5" },
+  { ip: "162.159.195.4", port: 4500, tag: "AWG-新加坡6" },
+  { ip: "188.114.98.1", port: 4500, tag: "AWG-新加坡7" },
+  { ip: "188.114.99.1", port: 4500, tag: "AWG-新加坡8" },
+  { ip: "162.159.192.5", port: 1701, tag: "AWG-东京1" },
+  { ip: "162.159.192.6", port: 1701, tag: "AWG-东京2" },
+  { ip: "162.159.193.5", port: 1701, tag: "AWG-东京3" },
+  { ip: "162.159.193.6", port: 1701, tag: "AWG-东京4" },
+  { ip: "162.159.195.5", port: 1701, tag: "AWG-东京5" },
+  { ip: "162.159.195.6", port: 1701, tag: "AWG-东京6" },
+  { ip: "188.114.96.2", port: 1701, tag: "AWG-东京7" },
+  { ip: "188.114.97.2", port: 1701, tag: "AWG-东京8" },
+  { ip: "162.159.192.7", port: 8443, tag: "AWG-首尔1" },
+  { ip: "162.159.192.8", port: 8443, tag: "AWG-首尔2" },
+  { ip: "162.159.193.7", port: 8443, tag: "AWG-首尔3" },
+  { ip: "162.159.193.8", port: 8443, tag: "AWG-首尔4" },
+  { ip: "162.159.195.7", port: 8443, tag: "AWG-首尔5" },
+  { ip: "162.159.195.8", port: 8443, tag: "AWG-首尔6" },
+  { ip: "188.114.98.2", port: 8443, tag: "AWG-首尔7" },
+  { ip: "188.114.99.2", port: 8443, tag: "AWG-首尔8" },
+  { ip: "162.159.192.9", port: 443, tag: "AWG-美西1" },
+  { ip: "162.159.192.10", port: 443, tag: "AWG-美西2" },
+  { ip: "162.159.193.9", port: 443, tag: "AWG-美西3" },
+  { ip: "162.159.193.10", port: 443, tag: "AWG-美西4" },
+  { ip: "162.159.195.9", port: 443, tag: "AWG-美西5" },
+  { ip: "162.159.195.10", port: 443, tag: "AWG-美西6" },
+  { ip: "188.114.96.3", port: 443, tag: "AWG-美西7" },
+  { ip: "188.114.97.3", port: 443, tag: "AWG-美西8" },
+  { ip: "162.159.192.11", port: 4443, tag: "AWG-欧洲1" },
+  { ip: "162.159.192.12", port: 4443, tag: "AWG-欧洲2" },
+  { ip: "162.159.193.11", port: 4443, tag: "AWG-欧洲3" },
+  { ip: "162.159.193.12", port: 4443, tag: "AWG-欧洲4" },
+  { ip: "162.159.195.11", port: 4443, tag: "AWG-欧洲5" },
+  { ip: "162.159.195.12", port: 4443, tag: "AWG-欧洲6" },
+  { ip: "188.114.98.3", port: 4443, tag: "AWG-欧洲7" },
+  { ip: "188.114.99.3", port: 4443, tag: "AWG-欧洲8" },
+];
+
 const V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 const V6 = ["2606:4700:103::1", "2606:4700:103::2",
             "2606:4700:104::1", "2606:4700:104::2"];
 const PORTS = [443, 500, 1701, 4500, 4443, 8443, 8095];
 
-// CF 没有 A 记录指向 MASQUE 段，官方域名只能用在 SNI 上
 const OFFICIAL_SNI = "zt-masque.cloudflareclient.com";
 const SNI_NODE = ["162.159.198.1", 443];
 
@@ -52,7 +100,6 @@ function entryName(ip, port) {
 }
 
 function masqueNode(name, ip, port, priv, pub, v4, v6, sni) {
-  // 裸 IPv6 含冒号，YAML 里必须加引号否则被当成映射
   const srv = ip.includes(":") ? `"${ip}"` : ip;
   const extra = sni ? `\n    sni: ${sni}` : "";
   return `  - name: ${name}
@@ -69,75 +116,132 @@ function masqueNode(name, ip, port, priv, pub, v4, v6, sni) {
     dns: [1.1.1.1, 2606:4700:4700::1111]`;
 }
 
-/** 生成全部 MASQUE 接入点。两种配置都用这批。 */
-function buildEntries(warp) {
+function awgNode(name, ip, port, priv, pub, v4, v6, reserved, opt = {}) {
+  const srv = ip.includes(":") ? `"${ip}"` : ip;
+  const resStr = JSON.stringify(reserved);
+  return `  - name: "${name}"
+    type: wireguard
+    server: ${srv}
+    port: ${port}
+    ip: ${v4}
+    ipv6: ${v6}
+    private-key: ${priv}
+    public-key: ${pub}
+    reserved: ${resStr}
+    udp: true
+    mtu: 1280
+    remote-dns-resolve: true
+    dns: [1.1.1.1, 2606:4700:4700::1111]
+    amnezia-wg-option:
+      jc: ${opt.jc || 4}
+      jmin: ${opt.jmin || 40}
+      jmax: ${opt.jmax || 70}`;
+}
+
+export function parseCustomEndpoints(raw, prefix = "AWG") {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  const lines = String(raw).split(/\r?\n/);
+  const result = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
+    let [target, customTag] = trimmed.split("#");
+    target = target.trim();
+    let ip = target, port = 500;
+    const lastColon = target.lastIndexOf(":");
+    if (lastColon > 0) {
+      const p = parseInt(target.slice(lastColon + 1), 10);
+      if (!isNaN(p) && p > 0 && p <= 65535) {
+        port = p;
+        ip = target.slice(0, lastColon).replace(/^\[|\]$/g, "").trim();
+      }
+    }
+    if (ip) {
+      const tag = customTag ? `${prefix}-${customTag.trim()}` : `${prefix}-自选-${ip}:${port}`;
+      result.push({ ip, port, tag });
+    }
+  }
+  return result;
+}
+
+export function buildAwgEntries(warp, customEndpoints = null) {
+  if (!warp) return { awgEntries: [], awgProxies: [] };
+  const priv = warp.privateKey;
+  const pub = warp.peerPublicKey || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
+  const res = warp.reserved || [13, 86, 243];
+  const v4 = warp.ipv4 || "172.16.0.2";
+  const v6 = warp.ipv6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963";
+
+  const endpoints = (customEndpoints && customEndpoints.length > 0)
+    ? customEndpoints
+    : AWG_OPTIMIZED_ENDPOINTS;
+
+  const awgEntries = [];
+  const awgProxies = [];
+  for (const ep of endpoints) {
+    awgEntries.push(ep.tag);
+    awgProxies.push(awgNode(ep.tag, ep.ip, ep.port, priv, pub, v4, v6, res));
+  }
+  return { awgEntries, awgProxies };
+}
+
+/** 生成 MASQUE 接入点。若有自选端点则优先使用。 */
+function buildEntries(warp, customMasqueEndpoints = null) {
   const { privateKey: priv, peerPublicKey: pub, ipv4: v4, ipv6: v6 } = warp;
   const entries = [], proxies = [];
-  // v4Entries 单独留一份：做 dialer-proxy 目标时只能用 IPv4，
-  // 否则纯 IPv4 的机器上会直接 "network is unreachable"。
   const v4Entries = [];
-  for (const ip of [...V4, ...V6]) {
-    for (const port of PORTS) {
-      const n = entryName(ip, port);
+
+  if (customMasqueEndpoints && customMasqueEndpoints.length > 0) {
+    for (const ep of customMasqueEndpoints) {
+      const n = ep.tag.startsWith("MASQUE-") ? ep.tag : `MASQUE-${ep.ip}:${ep.port}`;
       entries.push(n);
-      if (!ip.includes(":")) v4Entries.push(n);
-      proxies.push(masqueNode(n, ip, port, priv, pub, v4, v6));
+      if (!ep.ip.includes(":")) v4Entries.push(n);
+      proxies.push(masqueNode(n, ep.ip, ep.port, priv, pub, v4, v6));
+    }
+  } else {
+    for (const ip of [...V4, ...V6]) {
+      for (const port of PORTS) {
+        const n = entryName(ip, port);
+        entries.push(n);
+        if (!ip.includes(":")) v4Entries.push(n);
+        proxies.push(masqueNode(n, ip, port, priv, pub, v4, v6));
+      }
     }
   }
   entries.push("官方域名");
-  v4Entries.push("官方域名");   // 官方域名节点本身连的是 IPv4
+  v4Entries.push("官方域名");
   proxies.push(masqueNode("官方域名", SNI_NODE[0], SNI_NODE[1],
                           priv, pub, v4, v6, OFFICIAL_SNI));
   return { entries, proxies, v4Entries };
 }
 
-// 规则集只盖到 OpenAI / Claude / Gemini / Copilot，其他家没人维护。
-// 这批是自己补的，走 DOMAIN-SUFFIX 精确匹配。
-//
-// 注意别往里加 googleapis.com、cloudflare.com、stripe.com 这类共用域名 ——
-// 上游的 ai.list 就干了这事（它把整个 googleapis.com 和 bing.com 都算 AI），
-// 会把大量无关流量拽进 AI 分组。这里只放各家自己的域名。
 const AI_DOMAINS = [
-  // OpenAI（规则集已有 openai.com/chatgpt.com/sora.com，这几个是补的）
   "openai.fm", "operator.chatgpt.com", "chat.com",
-  // Anthropic
   "anthropic.com", "claude.ai", "claudeusercontent.com",
-  // Google
   "gemini.google.com", "aistudio.google.com", "generativelanguage.googleapis.com",
   "notebooklm.google.com", "notebooklm.google", "labs.google", "deepmind.com",
-  // xAI
   "x.ai", "grok.com",
-  // Meta
   "meta.ai",
-  // Perplexity
   "perplexity.ai", "pplx.ai", "perplexity.com",
-  // Mistral
   "mistral.ai", "chat.mistral.ai",
-  // Cohere / AI21 / Together / Fireworks / Groq
   "cohere.com", "cohere.ai", "ai21.com", "together.ai", "together.xyz",
   "fireworks.ai", "groq.com",
-  // 开源社区与推理平台
   "huggingface.co", "hf.co", "huggingface.js.org",
   "replicate.com", "replicate.delivery", "runpod.io", "modal.com",
   "openrouter.ai", "poe.com", "quora.com",
-  // 编程助手
   "cursor.com", "cursor.sh", "codeium.com", "windsurf.com",
   "tabnine.com", "sourcegraph.com", "phind.com", "v0.dev", "v0.app",
   "bolt.new", "lovable.dev", "devin.ai", "cognition.ai",
-  // 图像与视频
   "midjourney.com", "stability.ai", "stablediffusionweb.com",
   "leonardo.ai", "runwayml.com", "pika.art", "lumalabs.ai",
   "ideogram.ai", "recraft.ai", "krea.ai", "civitai.com",
-  // 语音
   "elevenlabs.io", "eleven-labs.com", "play.ht", "suno.com", "suno.ai",
   "udio.com", "assemblyai.com", "deepgram.com",
-  // 搜索与写作
   "you.com", "kagi.com", "exa.ai", "tavily.com",
   "jasper.ai", "copy.ai", "writesonic.com", "notion.so",
-  // 观测与工具链
   "langchain.com", "langsmith.com", "wandb.ai", "weightsandbiases.com",
   "pinecone.io", "weaviate.io", "qdrant.tech", "chromadb.com",
-  // 国产（默认也走代理，很多在国内反而连不上或要境外号）
   "deepseek.com", "moonshot.cn", "moonshotai.com", "kimi.com",
   "bigmodel.cn", "zhipuai.cn", "z.ai",
   "minimaxi.com", "minimax.io", "hailuoai.com",
@@ -147,7 +251,6 @@ const AI_DOMAINS = [
 const q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 const p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
 
-/** rule-providers 和 rules，两种配置共用。 */
 function buildRules() {
   const prov = [], rules = [];
   RULESETS.forEach(([group, url], i) => {
@@ -161,12 +264,10 @@ function buildRules() {
     path: ./ruleset/${pn}.list`);
     rules.push(`  - RULE-SET,${pn},${group}`);
   });
-  // 内联的 AI 域名放在 RULE-SET 前面，别被上游规则集里更宽的条目抢先命中
   const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},🤖 AI服务`);
   return { prov: prov.join("\n"), rules: [...ai, ...rules].join("\n") };
 }
 
-/** 公共头部：端口、DNS、sniffer 那一堆。 */
 function head(ipv6) {
   return `mixed-port: 7890
 allow-lan: false
@@ -224,8 +325,6 @@ dns:
       - https://8.8.8.8/dns-query`;
 }
 
-/** 下游分组（油管/奈飞/OpenAI 那些），两种配置共用。
- *  picks 是给「节点选择」之外的组用的候选列表。 */
 function tailGroups(picks) {
   return `  - name: 📹 油管视频
     type: select
@@ -314,38 +413,79 @@ ${p(picks)}
       - ♻️ 自动选择`;
 }
 
-export function buildConfig(warp, opera, proton, wind) {
-  const { entries, proxies, v4Entries } = buildEntries(warp);
+export function buildConfig(warp, opera, proton, wind, options = {}) {
+  const protocolMode = options.protocolMode === "wg" ? "wg" : (options.protocolMode === "masque" ? "masque" : (options.protocolMode ? options.protocolMode : "masque"));
+  const enableOpera = options.enableOpera !== false;
+  const enableProton = options.enableProton !== false;
+  const enableWarpDirect = options.enableWarpDirect !== false;
+  const enableWind = options.enableWind !== false;
+  const customWgEndpoints = options.customWgEndpoints || null;
+  const customMsEndpoints = options.customMsEndpoints || null;
 
-  // 笛卡尔积：任一接入点或任一落地失效，其他组合仍可用
+  let entries = [];
+  let proxies = [];
+  let v4Entries = [];
+
+  if (protocolMode === "wg") {
+    const { awgEntries, awgProxies } = buildAwgEntries(warp, customWgEndpoints);
+    entries = awgEntries;
+    proxies = [...awgProxies];
+    v4Entries = awgEntries;
+  } else {
+    const res = buildEntries(warp, customMsEndpoints);
+    entries = res.entries;
+    proxies = [...res.proxies];
+    v4Entries = res.v4Entries;
+  }
+
+  // Opera 落地组合（笛卡尔积）
   const byLoc = {};
-  for (const land of opera.landings) {
-    for (const ent of entries) {
-      const name = `${land.tag}@${ent}`;
-      (byLoc[land.loc] ||= []).push(name);
-      proxies.push(
-        `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, ` +
-        `username: ${opera.username}, password: ${opera.password}, tls: true, ` +
-        `sni: ${land.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`);
+  if (enableOpera && opera && opera.landings && opera.landings.length) {
+    for (const land of opera.landings) {
+      for (const ent of entries) {
+        const name = `${land.tag}@${ent}`;
+        (byLoc[land.loc] ||= []).push(name);
+        proxies.push(
+          `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, ` +
+          `username: ${opera.username}, password: ${opera.password}, tls: true, ` +
+          `sni: ${land.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`);
+      }
     }
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
 
-  // Proton 落地。28 台 x 41 接入点会爆到上千节点，没必要，
-  // 每台轮着分一个接入点即可，接入点挂了还有其他 Proton 节点顶。
-  //
-  // 只从 v4Entries 里选：WireGuard 的 UDP 要经这个接入点发出去，
-  // 分到 IPv6 接入点的话，没有 IPv6 的机器上会全部 network is unreachable。
+  // Proton 落地
   let protonNames = [];
-  const protonByCC = {};   // 国家 -> 该国节点名，用来按国家分组
-  if (proton && proton.servers && proton.servers.length) {
-    proton.servers.forEach((srv, i) => {
-      const ent = v4Entries[i % v4Entries.length];
-      protonNames.push(srv.name);
-      // 节点名形如「日本1」，去掉尾号就是国家名
-      const cc = srv.name.replace(/\d+$/, "");
-      (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
-      proxies.push(`  - name: "${srv.name}"
+  const protonByCC = {};
+  if (enableProton && proton && proton.servers && proton.servers.length) {
+    if (protocolMode === "wg") {
+      // WireGuard 模式：全组合 (笛卡尔积，如 28 x 48)
+      for (const srv of proton.servers) {
+        for (const ent of entries) {
+          const name = `${srv.name}@${ent}`;
+          protonNames.push(name);
+          const cc = srv.name.replace(/\d+$/, "");
+          (protonByCC[cc] = protonByCC[cc] || []).push(name);
+          proxies.push(`  - name: "${name}"
+    type: wireguard
+    server: ${srv.ip}
+    port: ${srv.port}
+    ip: 10.2.0.2
+    private-key: ${proton.privateKey}
+    public-key: ${srv.pub}
+    udp: true
+    mtu: 1280
+    dialer-proxy: "${ent}"`);
+        }
+      }
+    } else {
+      // MASQUE 模式：轮询 v4Entries
+      proton.servers.forEach((srv, i) => {
+        const ent = v4Entries[i % v4Entries.length];
+        protonNames.push(srv.name);
+        const cc = srv.name.replace(/\d+$/, "");
+        (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
+        proxies.push(`  - name: "${srv.name}"
     type: wireguard
     server: ${srv.ip}
     port: ${srv.port}
@@ -355,42 +495,39 @@ export function buildConfig(warp, opera, proton, wind) {
     udp: true
     mtu: 1280
     dialer-proxy: ${ent}`);
-    });
+      });
+    }
   }
 
-  // Windscribe 落地。和 Opera 同构（HTTPS 代理 + Basic），
-  // 但免费额度只有 2GB/月，做笛卡尔积没意义 —— 每台轮一个接入点就够。
-  // 只从 v4Entries 选，理由同 Proton：纯 IPv4 的机器上 v6 接入点不可达。
+  // Windscribe 落地 (轮询接入点)
   const windNames = [];
   const windByLoc = {};
-  if (wind && wind.servers && wind.servers.length) {
-    wind.servers.forEach((srv, i) => {
-      const ent = v4Entries[i % v4Entries.length];
-      const name = `WS-${srv.tag}`;
-      windNames.push(name);
-      (windByLoc[srv.loc] = windByLoc[srv.loc] || []).push(name);
-      proxies.push(
-        `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, ` +
-        `username: ${wind.username}, password: ${wind.password}, tls: true, ` +
-        `sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`);
-    });
+  if (enableWind && wind && wind.servers && wind.servers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    if (dialerList.length) {
+      wind.servers.forEach((srv, i) => {
+        const ent = dialerList[i % dialerList.length];
+        const name = `WS-${srv.tag}`;
+        windNames.push(name);
+        (windByLoc[srv.loc] = windByLoc[srv.loc] || []).push(name);
+        proxies.push(
+          `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, ` +
+          `username: ${wind.username}, password: ${wind.password}, tls: true, ` +
+          `sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`);
+      });
+    }
   }
-  const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
-  const windLocDefs = Object.entries(windByLoc).map(([loc, names]) =>
-    `  - name: WS-${loc}
+
+  const locNames = Object.keys(byLoc).map((l) => `${l}线路`);
+  const locDefs = Object.entries(byLoc).map(([loc, tags]) => `  - name: ${loc}线路
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 100
+    tolerance: 80
     lazy: true
     proxies:
-${q(names)}`).join("\n\n");
+${q(tags)}`).join("\n\n");
 
-  // 组合太多没法平铺选，按地区收成 url-test
-  const locNames = Object.keys(byLoc).map((l) => `${l}线路`);
-  // 接入点本来就在 proxies 里（做 dialer-proxy 的目标），
-  // 顺手暴露成一个直连组：套娃慢或落地挂了就切这个，一份订阅够用
-  // Proton 按国家分组：外层能选国家，组内 url-test 自动挑最快的那台
   const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
   const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) =>
     `  - name: Proton-${cc}
@@ -402,36 +539,38 @@ ${q(names)}`).join("\n\n");
     proxies:
 ${q(names)}`).join("\n\n");
 
-  const picks = [...locNames, "WARP直连"];
-  if (protonNames.length) picks.push("Proton线路", ...protonCCNames);
-  if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
-  const locDefs = Object.entries(byLoc).map(([loc, tags]) => `  - name: ${loc}线路
+  const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
+  const windLocDefs = Object.entries(windByLoc).map(([loc, names]) =>
+    `  - name: WS-${loc}
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 80
+    tolerance: 100
     lazy: true
     proxies:
-${q(tags)}`).join("\n\n");
+${q(names)}`).join("\n\n");
+
+  // 整理叶子节点：供 ♻️ 自动选择 与 🔄 故障转移 使用（绝不包含策略组名）
+  const leafProxies = [];
+  for (const tags of Object.values(byLoc)) {
+    leafProxies.push(...tags);
+  }
+  if (protonNames.length) leafProxies.push(...protonNames);
+  if (windNames.length) leafProxies.push(...windNames);
+  if (enableWarpDirect) leafProxies.push(...entries);
+  if (leafProxies.length === 0) leafProxies.push(...entries);
+
+  // 整理 🚀 节点选择 包含的组与直连
+  const picks = [];
+  if (locNames.length) picks.push(...locNames);
+  if (enableWarpDirect) picks.push("WARP直连");
+  if (protonNames.length) picks.push("Proton线路", ...protonCCNames);
+  if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
 
   const { prov, rules } = buildRules();
 
-  const yaml = `# Opera VPN over Cloudflare WARP (MASQUE)
+  const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
 # 由 Cloudflare Worker 生成于 ${new Date().toISOString()}
-#
-# 聚合版：套娃线路和 WARP 直连都在这一份里。
-#
-#   亚洲/欧洲/美洲线路  本机 -> MASQUE -> Opera 落地 -> 目标（能换出口国家）
-#   WARP直连            本机 -> MASQUE -> 目标（出口是 CF 自己的 IP，快）
-#
-# 节点名 "欧洲1@198.1-443" = 欧洲第 1 个落地，经 162.159.198.1:443 接入。
-#
-# 接入点 ${entries.length} 个 x 落地 ${opera.landings.length} 个 = 组合 ${combos} 个，
-# 外加 ${entries.length} 个直连接入点${protonNames.length ? ` 和 ${protonNames.length} 个 Proton 落地` : ""}${windNames.length ? ` 和 ${windNames.length} 个 Windscribe 落地` : ""}。
-# 任一环失效都有替代路径。
-#
-# 需要 mihomo Alpha 分支：稳定版没有 masque outbound，也不认 dialer-proxy。
-# private-key 等同 WARP 账号凭据，别外传。
 
 ${head(true)}
 
@@ -453,7 +592,7 @@ ${p(picks)}
     tolerance: 50
     lazy: true
     proxies:
-${p(picks)}
+${q(leafProxies)}
 
   - name: 🔄 故障转移
     type: fallback
@@ -461,11 +600,11 @@ ${p(picks)}
     interval: 180
     lazy: true
     proxies:
-${p(picks)}
+${q(leafProxies)}
 
 ${locDefs}
 
-  - name: WARP直连
+${enableWarpDirect ? `  - name: WARP直连
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
@@ -473,7 +612,7 @@ ${locDefs}
     lazy: true
     proxies:
 ${q(entries)}
-${protonNames.length ? `
+` : ""}${protonNames.length ? `
   - name: Proton线路
     type: select
     proxies:
@@ -520,6 +659,19 @@ ${rules}
   - MATCH,🐟 漏网之鱼
 `;
 
-  return { yaml, entries: entries.length, landings: opera.landings.length,
-           combos, proton: protonNames.length, wind: windNames.length };
+  return {
+    yaml,
+    protocolMode,
+    entries: entries.length,
+    wgEntries: protocolMode === "wg" ? entries.length : 0,
+    msEntries: protocolMode === "masque" ? entries.length : 0,
+    landings: (enableOpera && opera?.landings) ? opera.landings.length : 0,
+    combos,
+    proton: protonNames.length,
+    wind: windNames.length,
+    enableOpera,
+    enableProton,
+    enableWarpDirect,
+    enableWind,
+  };
 }

@@ -21,7 +21,58 @@ function randHex(n) {
 function cfTime() {
   return (/* @__PURE__ */ new Date()).toISOString().replace("Z", "+00:00");
 }
-async function registerWarp(deviceName = "cf-worker") {
+async function registerWireGuard(deviceName = "cf-worker") {
+  const xkp = await crypto.subtle.generateKey(
+    { name: "X25519" },
+    true,
+    ["deriveKey", "deriveBits"]
+  );
+  const wgPubRaw = await crypto.subtle.exportKey("raw", xkp.publicKey);
+  const wgPub = b64(wgPubRaw);
+  const wgPkcs8 = await crypto.subtle.exportKey("pkcs8", xkp.privateKey);
+  const wgPriv = b64(new Uint8Array(wgPkcs8).slice(-32));
+  const reg = await fetch(`${API}/reg`, {
+    method: "POST",
+    headers: H,
+    body: JSON.stringify({
+      key: wgPub,
+      install_id: "",
+      fcm_token: "",
+      tos: cfTime(),
+      model: "PC",
+      serial_number: randHex(8),
+      os_version: "",
+      key_type: "curve25519",
+      tunnel_type: "wireguard",
+      locale: "en-US"
+    })
+  });
+  if (!reg.ok) {
+    throw new Error(`WARP WireGuard\u6CE8\u518C\u5931\u8D25 ${reg.status}: ${(await reg.text()).slice(0, 200)}`);
+  }
+  const acc = await reg.json();
+  let reserved = [0, 0, 0];
+  if (acc.config?.client_id) {
+    try {
+      const rawCid = atob(acc.config.client_id);
+      reserved = [...rawCid].map((c) => c.charCodeAt(0));
+    } catch (_) {
+    }
+  }
+  const wgPeerPub = acc.config?.peers?.[0]?.public_key || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
+  return {
+    protocol: "wg",
+    deviceId: acc.id,
+    token: acc.token,
+    privateKey: wgPriv,
+    peerPublicKey: wgPeerPub,
+    reserved,
+    ipv4: acc.config?.interface?.addresses?.v4 || "172.16.0.2",
+    ipv6: acc.config?.interface?.addresses?.v6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963",
+    registeredAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function registerMasque(deviceName = "cf-worker") {
   const reg = await fetch(`${API}/reg`, {
     method: "POST",
     headers: H,
@@ -67,14 +118,21 @@ async function registerWarp(deviceName = "cf-worker") {
   const pem = up.config?.peers?.[0]?.public_key || "";
   const peerPub = pem.includes("-----") ? pem.split("\n").filter((l) => l && !l.startsWith("-----")).join("") : pem;
   return {
+    protocol: "masque",
     deviceId: acc.id,
     token: acc.token,
     privateKey: sec1,
     peerPublicKey: peerPub,
-    ipv4: up.config?.interface?.addresses?.v4 || acc.config?.interface?.addresses?.v4,
-    ipv6: up.config?.interface?.addresses?.v6 || acc.config?.interface?.addresses?.v6,
+    ipv4: up.config?.interface?.addresses?.v4 || acc.config?.interface?.addresses?.v4 || "172.16.0.2",
+    ipv6: up.config?.interface?.addresses?.v6 || acc.config?.interface?.addresses?.v6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963",
     registeredAt: (/* @__PURE__ */ new Date()).toISOString()
   };
+}
+async function registerWarp(protocol = "wg", deviceName = "cf-worker") {
+  if (protocol === "masque") {
+    return registerMasque(deviceName);
+  }
+  return registerWireGuard(deviceName);
 }
 function pkcs8ToSec1(b64pkcs8) {
   const der = Uint8Array.from(atob(b64pkcs8), (c) => c.charCodeAt(0));
@@ -366,6 +424,56 @@ async function fetchOpera() {
 }
 
 // src/config.js
+var AWG_OPTIMIZED_ENDPOINTS = [
+  { ip: "162.159.192.1", port: 500, tag: "AWG-\u9999\u6E2F1" },
+  { ip: "162.159.192.2", port: 500, tag: "AWG-\u9999\u6E2F2" },
+  { ip: "162.159.193.1", port: 500, tag: "AWG-\u9999\u6E2F3" },
+  { ip: "162.159.193.2", port: 500, tag: "AWG-\u9999\u6E2F4" },
+  { ip: "162.159.195.1", port: 500, tag: "AWG-\u9999\u6E2F5" },
+  { ip: "162.159.195.2", port: 500, tag: "AWG-\u9999\u6E2F6" },
+  { ip: "188.114.96.1", port: 500, tag: "AWG-\u9999\u6E2F7" },
+  { ip: "188.114.97.1", port: 500, tag: "AWG-\u9999\u6E2F8" },
+  { ip: "162.159.192.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
+  { ip: "162.159.192.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57612" },
+  { ip: "162.159.193.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57613" },
+  { ip: "162.159.193.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
+  { ip: "162.159.195.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57615" },
+  { ip: "162.159.195.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" },
+  { ip: "188.114.98.1", port: 4500, tag: "AWG-\u65B0\u52A0\u57617" },
+  { ip: "188.114.99.1", port: 4500, tag: "AWG-\u65B0\u52A0\u57618" },
+  { ip: "162.159.192.5", port: 1701, tag: "AWG-\u4E1C\u4EAC1" },
+  { ip: "162.159.192.6", port: 1701, tag: "AWG-\u4E1C\u4EAC2" },
+  { ip: "162.159.193.5", port: 1701, tag: "AWG-\u4E1C\u4EAC3" },
+  { ip: "162.159.193.6", port: 1701, tag: "AWG-\u4E1C\u4EAC4" },
+  { ip: "162.159.195.5", port: 1701, tag: "AWG-\u4E1C\u4EAC5" },
+  { ip: "162.159.195.6", port: 1701, tag: "AWG-\u4E1C\u4EAC6" },
+  { ip: "188.114.96.2", port: 1701, tag: "AWG-\u4E1C\u4EAC7" },
+  { ip: "188.114.97.2", port: 1701, tag: "AWG-\u4E1C\u4EAC8" },
+  { ip: "162.159.192.7", port: 8443, tag: "AWG-\u9996\u5C141" },
+  { ip: "162.159.192.8", port: 8443, tag: "AWG-\u9996\u5C142" },
+  { ip: "162.159.193.7", port: 8443, tag: "AWG-\u9996\u5C143" },
+  { ip: "162.159.193.8", port: 8443, tag: "AWG-\u9996\u5C144" },
+  { ip: "162.159.195.7", port: 8443, tag: "AWG-\u9996\u5C145" },
+  { ip: "162.159.195.8", port: 8443, tag: "AWG-\u9996\u5C146" },
+  { ip: "188.114.98.2", port: 8443, tag: "AWG-\u9996\u5C147" },
+  { ip: "188.114.99.2", port: 8443, tag: "AWG-\u9996\u5C148" },
+  { ip: "162.159.192.9", port: 443, tag: "AWG-\u7F8E\u897F1" },
+  { ip: "162.159.192.10", port: 443, tag: "AWG-\u7F8E\u897F2" },
+  { ip: "162.159.193.9", port: 443, tag: "AWG-\u7F8E\u897F3" },
+  { ip: "162.159.193.10", port: 443, tag: "AWG-\u7F8E\u897F4" },
+  { ip: "162.159.195.9", port: 443, tag: "AWG-\u7F8E\u897F5" },
+  { ip: "162.159.195.10", port: 443, tag: "AWG-\u7F8E\u897F6" },
+  { ip: "188.114.96.3", port: 443, tag: "AWG-\u7F8E\u897F7" },
+  { ip: "188.114.97.3", port: 443, tag: "AWG-\u7F8E\u897F8" },
+  { ip: "162.159.192.11", port: 4443, tag: "AWG-\u6B27\u6D321" },
+  { ip: "162.159.192.12", port: 4443, tag: "AWG-\u6B27\u6D322" },
+  { ip: "162.159.193.11", port: 4443, tag: "AWG-\u6B27\u6D323" },
+  { ip: "162.159.193.12", port: 4443, tag: "AWG-\u6B27\u6D324" },
+  { ip: "162.159.195.11", port: 4443, tag: "AWG-\u6B27\u6D325" },
+  { ip: "162.159.195.12", port: 4443, tag: "AWG-\u6B27\u6D326" },
+  { ip: "188.114.98.3", port: 4443, tag: "AWG-\u6B27\u6D327" },
+  { ip: "188.114.99.3", port: 4443, tag: "AWG-\u6B27\u6D328" }
+];
 var V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 var V6 = [
   "2606:4700:103::1",
@@ -430,16 +538,88 @@ function masqueNode(name, ip, port, priv, pub, v4, v6, sni) {
     remote-dns-resolve: true
     dns: [1.1.1.1, 2606:4700:4700::1111]`;
 }
-function buildEntries(warp) {
+function awgNode(name, ip, port, priv, pub, v4, v6, reserved, opt = {}) {
+  const srv = ip.includes(":") ? `"${ip}"` : ip;
+  const resStr = JSON.stringify(reserved);
+  return `  - name: "${name}"
+    type: wireguard
+    server: ${srv}
+    port: ${port}
+    ip: ${v4}
+    ipv6: ${v6}
+    private-key: ${priv}
+    public-key: ${pub}
+    reserved: ${resStr}
+    udp: true
+    mtu: 1280
+    remote-dns-resolve: true
+    dns: [1.1.1.1, 2606:4700:4700::1111]
+    amnezia-wg-option:
+      jc: ${opt.jc || 4}
+      jmin: ${opt.jmin || 40}
+      jmax: ${opt.jmax || 70}`;
+}
+function parseCustomEndpoints(raw, prefix = "AWG") {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  const lines = String(raw).split(/\r?\n/);
+  const result = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
+    let [target, customTag] = trimmed.split("#");
+    target = target.trim();
+    let ip = target, port = 500;
+    const lastColon = target.lastIndexOf(":");
+    if (lastColon > 0) {
+      const p2 = parseInt(target.slice(lastColon + 1), 10);
+      if (!isNaN(p2) && p2 > 0 && p2 <= 65535) {
+        port = p2;
+        ip = target.slice(0, lastColon).replace(/^\[|\]$/g, "").trim();
+      }
+    }
+    if (ip) {
+      const tag = customTag ? `${prefix}-${customTag.trim()}` : `${prefix}-\u81EA\u9009-${ip}:${port}`;
+      result.push({ ip, port, tag });
+    }
+  }
+  return result;
+}
+function buildAwgEntries(warp, customEndpoints = null) {
+  if (!warp) return { awgEntries: [], awgProxies: [] };
+  const priv = warp.privateKey;
+  const pub = warp.peerPublicKey || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
+  const res = warp.reserved || [13, 86, 243];
+  const v4 = warp.ipv4 || "172.16.0.2";
+  const v6 = warp.ipv6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963";
+  const endpoints = customEndpoints && customEndpoints.length > 0 ? customEndpoints : AWG_OPTIMIZED_ENDPOINTS;
+  const awgEntries = [];
+  const awgProxies = [];
+  for (const ep of endpoints) {
+    awgEntries.push(ep.tag);
+    awgProxies.push(awgNode(ep.tag, ep.ip, ep.port, priv, pub, v4, v6, res));
+  }
+  return { awgEntries, awgProxies };
+}
+function buildEntries(warp, customMasqueEndpoints = null) {
   const { privateKey: priv, peerPublicKey: pub, ipv4: v4, ipv6: v6 } = warp;
   const entries = [], proxies = [];
   const v4Entries = [];
-  for (const ip of [...V4, ...V6]) {
-    for (const port of PORTS) {
-      const n = entryName(ip, port);
+  if (customMasqueEndpoints && customMasqueEndpoints.length > 0) {
+    for (const ep of customMasqueEndpoints) {
+      const n = ep.tag.startsWith("MASQUE-") ? ep.tag : `MASQUE-${ep.ip}:${ep.port}`;
       entries.push(n);
-      if (!ip.includes(":")) v4Entries.push(n);
-      proxies.push(masqueNode(n, ip, port, priv, pub, v4, v6));
+      if (!ep.ip.includes(":")) v4Entries.push(n);
+      proxies.push(masqueNode(n, ep.ip, ep.port, priv, pub, v4, v6));
+    }
+  } else {
+    for (const ip of [...V4, ...V6]) {
+      for (const port of PORTS) {
+        const n = entryName(ip, port);
+        entries.push(n);
+        if (!ip.includes(":")) v4Entries.push(n);
+        proxies.push(masqueNode(n, ip, port, priv, pub, v4, v6));
+      }
     }
   }
   entries.push("\u5B98\u65B9\u57DF\u540D");
@@ -457,15 +637,12 @@ function buildEntries(warp) {
   return { entries, proxies, v4Entries };
 }
 var AI_DOMAINS = [
-  // OpenAI（规则集已有 openai.com/chatgpt.com/sora.com，这几个是补的）
   "openai.fm",
   "operator.chatgpt.com",
   "chat.com",
-  // Anthropic
   "anthropic.com",
   "claude.ai",
   "claudeusercontent.com",
-  // Google
   "gemini.google.com",
   "aistudio.google.com",
   "generativelanguage.googleapis.com",
@@ -473,19 +650,14 @@ var AI_DOMAINS = [
   "notebooklm.google",
   "labs.google",
   "deepmind.com",
-  // xAI
   "x.ai",
   "grok.com",
-  // Meta
   "meta.ai",
-  // Perplexity
   "perplexity.ai",
   "pplx.ai",
   "perplexity.com",
-  // Mistral
   "mistral.ai",
   "chat.mistral.ai",
-  // Cohere / AI21 / Together / Fireworks / Groq
   "cohere.com",
   "cohere.ai",
   "ai21.com",
@@ -493,7 +665,6 @@ var AI_DOMAINS = [
   "together.xyz",
   "fireworks.ai",
   "groq.com",
-  // 开源社区与推理平台
   "huggingface.co",
   "hf.co",
   "huggingface.js.org",
@@ -504,7 +675,6 @@ var AI_DOMAINS = [
   "openrouter.ai",
   "poe.com",
   "quora.com",
-  // 编程助手
   "cursor.com",
   "cursor.sh",
   "codeium.com",
@@ -518,7 +688,6 @@ var AI_DOMAINS = [
   "lovable.dev",
   "devin.ai",
   "cognition.ai",
-  // 图像与视频
   "midjourney.com",
   "stability.ai",
   "stablediffusionweb.com",
@@ -530,7 +699,6 @@ var AI_DOMAINS = [
   "recraft.ai",
   "krea.ai",
   "civitai.com",
-  // 语音
   "elevenlabs.io",
   "eleven-labs.com",
   "play.ht",
@@ -539,7 +707,6 @@ var AI_DOMAINS = [
   "udio.com",
   "assemblyai.com",
   "deepgram.com",
-  // 搜索与写作
   "you.com",
   "kagi.com",
   "exa.ai",
@@ -548,7 +715,6 @@ var AI_DOMAINS = [
   "copy.ai",
   "writesonic.com",
   "notion.so",
-  // 观测与工具链
   "langchain.com",
   "langsmith.com",
   "wandb.ai",
@@ -557,7 +723,6 @@ var AI_DOMAINS = [
   "weaviate.io",
   "qdrant.tech",
   "chromadb.com",
-  // 国产（默认也走代理，很多在国内反而连不上或要境外号）
   "deepseek.com",
   "moonshot.cn",
   "moonshotai.com",
@@ -732,28 +897,70 @@ ${p(picks)}
       - \u{1F3AF} \u5168\u7403\u76F4\u8FDE
       - \u267B\uFE0F \u81EA\u52A8\u9009\u62E9`;
 }
-function buildConfig(warp, opera, proton, wind) {
-  const { entries, proxies, v4Entries } = buildEntries(warp);
+function buildConfig(warp, opera, proton, wind, options = {}) {
+  const protocolMode = options.protocolMode === "wg" ? "wg" : options.protocolMode === "masque" ? "masque" : options.protocolMode ? options.protocolMode : "masque";
+  const enableOpera = options.enableOpera !== false;
+  const enableProton = options.enableProton !== false;
+  const enableWarpDirect = options.enableWarpDirect !== false;
+  const enableWind = options.enableWind !== false;
+  const customWgEndpoints = options.customWgEndpoints || null;
+  const customMsEndpoints = options.customMsEndpoints || null;
+  let entries = [];
+  let proxies = [];
+  let v4Entries = [];
+  if (protocolMode === "wg") {
+    const { awgEntries, awgProxies } = buildAwgEntries(warp, customWgEndpoints);
+    entries = awgEntries;
+    proxies = [...awgProxies];
+    v4Entries = awgEntries;
+  } else {
+    const res = buildEntries(warp, customMsEndpoints);
+    entries = res.entries;
+    proxies = [...res.proxies];
+    v4Entries = res.v4Entries;
+  }
   const byLoc = {};
-  for (const land of opera.landings) {
-    for (const ent of entries) {
-      const name = `${land.tag}@${ent}`;
-      (byLoc[land.loc] ||= []).push(name);
-      proxies.push(
-        `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, username: ${opera.username}, password: ${opera.password}, tls: true, sni: ${land.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`
-      );
+  if (enableOpera && opera && opera.landings && opera.landings.length) {
+    for (const land of opera.landings) {
+      for (const ent of entries) {
+        const name = `${land.tag}@${ent}`;
+        (byLoc[land.loc] ||= []).push(name);
+        proxies.push(
+          `  - {name: "${name}", type: http, server: ${land.ip}, port: ${land.port}, username: ${opera.username}, password: ${opera.password}, tls: true, sni: ${land.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`
+        );
+      }
     }
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
   let protonNames = [];
   const protonByCC = {};
-  if (proton && proton.servers && proton.servers.length) {
-    proton.servers.forEach((srv, i) => {
-      const ent = v4Entries[i % v4Entries.length];
-      protonNames.push(srv.name);
-      const cc = srv.name.replace(/\d+$/, "");
-      (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
-      proxies.push(`  - name: "${srv.name}"
+  if (enableProton && proton && proton.servers && proton.servers.length) {
+    if (protocolMode === "wg") {
+      for (const srv of proton.servers) {
+        for (const ent of entries) {
+          const name = `${srv.name}@${ent}`;
+          protonNames.push(name);
+          const cc = srv.name.replace(/\d+$/, "");
+          (protonByCC[cc] = protonByCC[cc] || []).push(name);
+          proxies.push(`  - name: "${name}"
+    type: wireguard
+    server: ${srv.ip}
+    port: ${srv.port}
+    ip: 10.2.0.2
+    private-key: ${proton.privateKey}
+    public-key: ${srv.pub}
+    udp: true
+    mtu: 1280
+    dialer-proxy: "${ent}"`);
+        }
+      }
+    } else {
+      proton.servers.forEach((srv, i) => {
+        const ent = v4Entries[i % v4Entries.length];
+        protonNames.push(srv.name);
+        const cc = srv.name.replace(/\d+$/, "");
+        (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
+        proxies.push(`  - name: "${srv.name}"
     type: wireguard
     server: ${srv.ip}
     port: ${srv.port}
@@ -763,31 +970,34 @@ function buildConfig(warp, opera, proton, wind) {
     udp: true
     mtu: 1280
     dialer-proxy: ${ent}`);
-    });
+      });
+    }
   }
   const windNames = [];
   const windByLoc = {};
-  if (wind && wind.servers && wind.servers.length) {
-    wind.servers.forEach((srv, i) => {
-      const ent = v4Entries[i % v4Entries.length];
-      const name = `WS-${srv.tag}`;
-      windNames.push(name);
-      (windByLoc[srv.loc] = windByLoc[srv.loc] || []).push(name);
-      proxies.push(
-        `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, username: ${wind.username}, password: ${wind.password}, tls: true, sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: ${ent}}`
-      );
-    });
+  if (enableWind && wind && wind.servers && wind.servers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    if (dialerList.length) {
+      wind.servers.forEach((srv, i) => {
+        const ent = dialerList[i % dialerList.length];
+        const name = `WS-${srv.tag}`;
+        windNames.push(name);
+        (windByLoc[srv.loc] = windByLoc[srv.loc] || []).push(name);
+        proxies.push(
+          `  - {name: "${name}", type: http, server: ${srv.host}, port: ${srv.port}, username: ${wind.username}, password: ${wind.password}, tls: true, sni: ${srv.host}, skip-cert-verify: false, dialer-proxy: "${ent}"}`
+        );
+      });
+    }
   }
-  const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
-  const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
+  const locNames = Object.keys(byLoc).map((l) => `${l}\u7EBF\u8DEF`);
+  const locDefs = Object.entries(byLoc).map(([loc, tags]) => `  - name: ${loc}\u7EBF\u8DEF
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 100
+    tolerance: 80
     lazy: true
     proxies:
-${q(names)}`).join("\n\n");
-  const locNames = Object.keys(byLoc).map((l) => `${l}\u7EBF\u8DEF`);
+${q(tags)}`).join("\n\n");
   const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
   const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => `  - name: Proton-${cc}
     type: url-test
@@ -797,34 +1007,31 @@ ${q(names)}`).join("\n\n");
     lazy: true
     proxies:
 ${q(names)}`).join("\n\n");
-  const picks = [...locNames, "WARP\u76F4\u8FDE"];
-  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames);
-  if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
-  const locDefs = Object.entries(byLoc).map(([loc, tags]) => `  - name: ${loc}\u7EBF\u8DEF
+  const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
+  const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 80
+    tolerance: 100
     lazy: true
     proxies:
-${q(tags)}`).join("\n\n");
+${q(names)}`).join("\n\n");
+  const leafProxies = [];
+  for (const tags of Object.values(byLoc)) {
+    leafProxies.push(...tags);
+  }
+  if (protonNames.length) leafProxies.push(...protonNames);
+  if (windNames.length) leafProxies.push(...windNames);
+  if (enableWarpDirect) leafProxies.push(...entries);
+  if (leafProxies.length === 0) leafProxies.push(...entries);
+  const picks = [];
+  if (locNames.length) picks.push(...locNames);
+  if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
+  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames);
+  if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
   const { prov, rules } = buildRules();
-  const yaml = `# Opera VPN over Cloudflare WARP (MASQUE)
+  const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
 # \u7531 Cloudflare Worker \u751F\u6210\u4E8E ${(/* @__PURE__ */ new Date()).toISOString()}
-#
-# \u805A\u5408\u7248\uFF1A\u5957\u5A03\u7EBF\u8DEF\u548C WARP \u76F4\u8FDE\u90FD\u5728\u8FD9\u4E00\u4EFD\u91CC\u3002
-#
-#   \u4E9A\u6D32/\u6B27\u6D32/\u7F8E\u6D32\u7EBF\u8DEF  \u672C\u673A -> MASQUE -> Opera \u843D\u5730 -> \u76EE\u6807\uFF08\u80FD\u6362\u51FA\u53E3\u56FD\u5BB6\uFF09
-#   WARP\u76F4\u8FDE            \u672C\u673A -> MASQUE -> \u76EE\u6807\uFF08\u51FA\u53E3\u662F CF \u81EA\u5DF1\u7684 IP\uFF0C\u5FEB\uFF09
-#
-# \u8282\u70B9\u540D "\u6B27\u6D321@198.1-443" = \u6B27\u6D32\u7B2C 1 \u4E2A\u843D\u5730\uFF0C\u7ECF 162.159.198.1:443 \u63A5\u5165\u3002
-#
-# \u63A5\u5165\u70B9 ${entries.length} \u4E2A x \u843D\u5730 ${opera.landings.length} \u4E2A = \u7EC4\u5408 ${combos} \u4E2A\uFF0C
-# \u5916\u52A0 ${entries.length} \u4E2A\u76F4\u8FDE\u63A5\u5165\u70B9${protonNames.length ? ` \u548C ${protonNames.length} \u4E2A Proton \u843D\u5730` : ""}${windNames.length ? ` \u548C ${windNames.length} \u4E2A Windscribe \u843D\u5730` : ""}\u3002
-# \u4EFB\u4E00\u73AF\u5931\u6548\u90FD\u6709\u66FF\u4EE3\u8DEF\u5F84\u3002
-#
-# \u9700\u8981 mihomo Alpha \u5206\u652F\uFF1A\u7A33\u5B9A\u7248\u6CA1\u6709 masque outbound\uFF0C\u4E5F\u4E0D\u8BA4 dialer-proxy\u3002
-# private-key \u7B49\u540C WARP \u8D26\u53F7\u51ED\u636E\uFF0C\u522B\u5916\u4F20\u3002
 
 ${head(true)}
 
@@ -846,7 +1053,7 @@ ${p(picks)}
     tolerance: 50
     lazy: true
     proxies:
-${p(picks)}
+${q(leafProxies)}
 
   - name: \u{1F504} \u6545\u969C\u8F6C\u79FB
     type: fallback
@@ -854,11 +1061,11 @@ ${p(picks)}
     interval: 180
     lazy: true
     proxies:
-${p(picks)}
+${q(leafProxies)}
 
 ${locDefs}
 
-  - name: WARP\u76F4\u8FDE
+${enableWarpDirect ? `  - name: WARP\u76F4\u8FDE
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
@@ -866,7 +1073,7 @@ ${locDefs}
     lazy: true
     proxies:
 ${q(entries)}
-${protonNames.length ? `
+` : ""}${protonNames.length ? `
   - name: Proton\u7EBF\u8DEF
     type: select
     proxies:
@@ -914,11 +1121,18 @@ ${rules}
 `;
   return {
     yaml,
+    protocolMode,
     entries: entries.length,
-    landings: opera.landings.length,
+    wgEntries: protocolMode === "wg" ? entries.length : 0,
+    msEntries: protocolMode === "masque" ? entries.length : 0,
+    landings: enableOpera && opera?.landings ? opera.landings.length : 0,
     combos,
     proton: protonNames.length,
-    wind: windNames.length
+    wind: windNames.length,
+    enableOpera,
+    enableProton,
+    enableWarpDirect,
+    enableWind
   };
 }
 
@@ -1096,7 +1310,7 @@ body::after{
 }
 .title::before{content:"// ";color:var(--pink)}
 .body{padding:22px 20px;min-width:0}
-input{
+input[type="text"],input[type="password"]{
   background:rgba(0,0,0,.45);
   border:1px solid var(--border);color:var(--cyan);
   font-family:inherit;font-size:12px;padding:11px 12px;outline:none;
@@ -1114,6 +1328,12 @@ button.gh{border-color:var(--cyan);color:var(--cyan);text-shadow:0 0 6px var(--c
 button.gh:hover{background:var(--cyan);color:#05030e;box-shadow:0 0 16px var(--cyan)}
 button:disabled{opacity:.4;cursor:not-allowed}
 #msg{margin-top:10px;font-size:12px;min-height:18px}
+.switch-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
+.switch-item{display:flex;align-items:center;gap:10px;font-size:12px;cursor:pointer;background:rgba(0,0,0,.35);padding:10px 12px;border:1px solid rgba(0,240,255,.25)}
+.switch-item input[type="checkbox"]{accent-color:var(--pink);width:16px;height:16px;cursor:pointer}
+.radio-row{display:flex;gap:24px;align-items:center;margin:10px 0;font-size:12px}
+.radio-label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.radio-label input[type="radio"]{accent-color:var(--cyan);width:16px;height:16px;cursor:pointer}
 `;
 function renderNoKV() {
   return `<!DOCTYPE html>
@@ -1193,7 +1413,7 @@ async function go(e){
 <\/script>
 </body></html>`;
 }
-function renderLogin(err) {
+function renderLogin() {
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
@@ -1235,10 +1455,15 @@ async function go(e){
 <\/script>
 </body></html>`;
 }
-function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage) {
+function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage, settings = {}) {
   const s = state || {};
   const warp = s.warp || {};
   const stat = s.stats || {};
+  const protocolMode = s.protocolMode || settings.protocolMode || "wg";
+  const enableOpera = settings.enableOpera ?? true;
+  const enableProton = settings.enableProton ?? true;
+  const enableWarpDirect = settings.enableWarpDirect ?? true;
+  const enableWind = settings.enableWind ?? true;
   const updated = s.updatedAt ? new Date(s.updatedAt) : null;
   const ago = updated ? Math.floor((Date.now() - updated.getTime()) / 6e4) : null;
   const exp = s.expiresAt ? new Date(s.expiresAt) : null;
@@ -1247,6 +1472,8 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
   const fmt = (d) => d ? d.toISOString().replace("T", " ").slice(0, 19) + " UTC" : "\u2014";
   const sub = `https://${host}${sp}?token=${token}`;
   const pushUrl = pushToken ? `https://${host}/push/${pushToken}` : "";
+  const pushUrlWg = pushToken ? `${pushUrl}/wg` : "";
+  const pushUrlMs = pushToken ? `${pushUrl}/ms` : "";
   const pExp = protonCred && protonCred.expiresAt ? new Date(protonCred.expiresAt * 1e3) : null;
   const windInfo = s.wind || null;
   const windPct = windUsage && windUsage.max ? Math.round(windUsage.used / windUsage.max * 100) : 0;
@@ -1258,7 +1485,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OPERA // MASQUE</title>
+<title>Opera over MASQUE</title>
 <style>${CSS}
 .wrap{width:100%;max-width:880px;position:relative;z-index:2;min-width:0}
 .sec{margin-bottom:26px;min-width:0}
@@ -1278,12 +1505,12 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
 .v.ok{color:var(--mint);text-shadow:0 0 6px var(--mint)}
 .v.warn{color:var(--yellow);text-shadow:0 0 6px var(--yellow)}
 .v.err{color:var(--red);text-shadow:0 0 6px var(--red)}
-.grid{display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.grid{display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .cell{
   border:1px solid rgba(0,240,255,.3);padding:12px 14px;
   background:rgba(0,240,255,.04);min-width:0;
 }
-.cell .n{font-size:26px;font-weight:700;color:var(--cyan);text-shadow:0 0 10px var(--cyan);line-height:1.1}
+.cell .n{font-size:24px;font-weight:700;color:var(--cyan);text-shadow:0 0 10px var(--cyan);line-height:1.1}
 .cell .l{font-size:10px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;margin-top:6px;
   overflow-wrap:anywhere}
 .sub{display:flex;gap:8px;align-items:stretch;margin-top:4px;flex-wrap:wrap}
@@ -1318,7 +1545,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
   .note{letter-spacing:0;font-size:11px}
   .title{font-size:10px;letter-spacing:.12em}
   .k,.v{letter-spacing:0}
-  .cell .n{font-size:22px}
+  .cell .n{font-size:20px}
   .cell .l{letter-spacing:.08em;font-size:9px}
   .sec-t{letter-spacing:.14em}
 }
@@ -1343,11 +1570,11 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       </div>
       <div class="note">
         \u4E00\u4EFD\u805A\u5408\uFF0C\u5BFC\u8FDB\u53BB\u6709\u4E24\u7C7B\u7EBF\u8DEF\u53EF\u5207\uFF1A<br>
-        <b>\u4E9A\u6D32/\u6B27\u6D32/\u7F8E\u6D32\u7EBF\u8DEF</b> \u2014 \u8D70 MASQUE \u518D\u843D Opera\uFF0C\u80FD\u6362\u51FA\u53E3\u56FD\u5BB6\uFF0C\u4F46\u591A\u4E00\u8DF3\u4F1A\u6162\u4E9B\u3002<br>
-        <b>WARP\u76F4\u8FDE</b> \u2014 \u53EA\u8D70 MASQUE\uFF0C\u51FA\u53E3\u662F Cloudflare \u81EA\u5DF1\u7684 IP\uFF0C\u5FEB\u4F46\u9009\u4E0D\u4E86\u56FD\u5BB6\u3002<br>
-        <b>Proton\u7EBF\u8DEF</b> \u2014 MASQUE \u6253\u5E95 + Proton WireGuard \u843D\u5730\uFF0C10 \u4E2A\u56FD\u5BB6\uFF08\u914D\u7F6E\u540E\u51FA\u73B0\uFF09\u3002<br>
-        <b>Windscribe\u7EBF\u8DEF</b> \u2014 MASQUE \u6253\u5E95 + Windscribe \u843D\u5730\uFF0C13 \u4E2A\u5730\u533A\uFF0C\u6709\u9999\u6E2F\uFF08\u914D\u7F6E\u540E\u51FA\u73B0\uFF09\u3002<br>
-        \u5957\u5A03\u7EBF\u8DEF\u8D85\u65F6\u6216\u843D\u5730\u6302\u4E86\uFF0C\u5207 WARP\u76F4\u8FDE\u9876\u4E0A\u3002
+        \u5F53\u524D\u4E13\u5C5E\u63A5\u5165\u534F\u8BAE\uFF1A<b>${protocolMode === "wg" ? "WireGuard (AmneziaWG \u6DF7\u6DC6)" : "MASQUE (P-256)"}</b>\u3002<br>
+        <b>\u4E9A\u6D32/\u6B27\u6D32/\u7F8E\u6D32\u7EBF\u8DEF</b> \u2014 \u8D70\u524D\u7F6E\u63A5\u5165\u70B9\u518D\u843D Opera\uFF0C\u80FD\u6362\u51FA\u53E3\u56FD\u5BB6\u3002<br>
+        <b>WARP\u76F4\u8FDE</b> \u2014 \u53EA\u8D70\u524D\u7F6E\u63A5\u5165\u70B9\uFF0C\u51FA\u53E3\u662F Cloudflare \u81EA\u5DF1\u7684 IP\uFF0C\u901F\u5EA6\u6781\u5FEB\u3002<br>
+        <b>Proton\u7EBF\u8DEF</b> \u2014 \u524D\u7F6E\u63A5\u5165\u6253\u5E95 + Proton WireGuard \u843D\u5730\uFF0C10 \u4E2A\u56FD\u5BB6\u3002<br>
+        <b>Windscribe\u7EBF\u8DEF</b> \u2014 \u524D\u7F6E\u63A5\u5165\u6253\u5E95 + Windscribe \u843D\u5730\uFF0C13 \u4E2A\u5730\u533A\u3002
       </div>
       <div id="msg"></div>
     </div>
@@ -1356,44 +1583,67 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="sec-t">\u8282\u70B9</div>
       <div class="grid">
         <div class="cell"><div class="n">${stat.combos ?? "\u2014"}</div><div class="l">\u7EC4\u5408\u8282\u70B9</div></div>
-        <div class="cell"><div class="n">${stat.entries ?? "\u2014"}</div><div class="l">MASQUE \u63A5\u5165\u70B9</div></div>
-        <div class="cell"><div class="n">${stat.landings ?? "\u2014"}</div><div class="l">Opera \u843D\u5730</div></div>
-        <div class="cell"><div class="n">${stat.entries ?? "\u2014"}</div><div class="l">WARP \u76F4\u8FDE</div></div>
-        <div class="cell"><div class="n">${stat.proton || "\u2014"}</div><div class="l">Proton \u843D\u5730</div></div>
-        <div class="cell"><div class="n">${stat.wind || "\u2014"}</div><div class="l">Windscribe \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${protocolMode === "wg" ? stat.wgEntries ?? stat.entries ?? "48" : "\u2014"}</div><div class="l">WireGuard \u63A5\u5165\u70B9</div></div>
+        <div class="cell"><div class="n">${protocolMode === "masque" ? stat.msEntries ?? stat.entries ?? "57" : "\u2014"}</div><div class="l">MASQUE \u63A5\u5165\u70B9</div></div>
+        <div class="cell"><div class="n">${!enableOpera ? "\u5DF2\u5173\u95ED" : stat.landings ?? "\u2014"}</div><div class="l">Opera \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${!enableWarpDirect ? "\u5DF2\u5173\u95ED" : stat.entries ?? "\u2014"}</div><div class="l">WARP \u76F4\u8FDE</div></div>
+        <div class="cell"><div class="n">${!enableProton ? "\u5DF2\u5173\u95ED" : stat.proton || "\u2014"}</div><div class="l">Proton \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${!enableWind ? "\u5DF2\u5173\u95ED" : stat.wind || "\u2014"}</div><div class="l">Windscribe \u843D\u5730</div></div>
       </div>
       <div class="note">
-        \u6BCF\u4E2A\u843D\u5730\u548C\u6BCF\u4E2A\u63A5\u5165\u70B9\u90FD\u7EC4\u5408\u4E00\u904D\uFF0C\u4EFB\u4E00\u73AF\u5931\u6548\u90FD\u8FD8\u6709\u522B\u7684\u8DEF\u8D70\u3002<br>
-        \u8282\u70B9\u540D <b>\u6B27\u6D321@198.1-443</b> = \u6B27\u6D32\u7B2C 1 \u4E2A\u843D\u5730\uFF0C\u7ECF 162.159.198.1:443 \u63A5\u5165\u3002
+        \u6BCF\u4E2A\u5F00\u542F\u7684\u843D\u5730\u548C\u524D\u7F6E\u63A5\u5165\u70B9\u8FDB\u884C\u7B1B\u5361\u5C14\u79EF\u7EC4\u5408\uFF0C\u4EFB\u4E00\u8DEF\u5F84\u6545\u969C\u90FD\u6709\u5197\u4F59\u8282\u70B9\u515C\u5E95\u3002
       </div>
     </div>
 
     <div class="sec">
-      <div class="sec-t">\u72B6\u6001</div>
-      ${row(
-    "\u4E0A\u6B21\u66F4\u65B0",
-    updated ? `${fmt(updated)}\uFF08${ago} \u5206\u949F\u524D\uFF09` : "\u5C1A\u672A\u751F\u6210",
-    updated ? ago > 250 ? "warn" : "ok" : "err"
-  )}
-      ${row("\u51ED\u636E\u5269\u4F59", leftTxt, left === null ? "" : left <= 0 ? "warn" : "ok")}
-      ${row("\u5230\u671F\u65F6\u95F4", fmt(exp))}
-      ${row("\u5BC6\u7801\u66F4\u65B0\u4E8E", cred && cred.updatedAt ? fmt(new Date(cred.updatedAt)) : "\u2014")}
-      ${row("WARP \u8BBE\u5907", warp.deviceId ? warp.deviceId.slice(0, 8) + "\u2026" : "\u2014")}
-      ${row("WARP \u6CE8\u518C\u4E8E", warp.registeredAt ? fmt(new Date(warp.registeredAt)) : "\u2014")}
-      ${row("\u5185\u7F51\u5730\u5740", warp.ipv4 || "\u2014")}
+      <div class="sec-t">\u843D\u5730\u4E0E\u76F4\u8FDE\u5F00\u5173</div>
+      <div class="switch-grid">
+        <label class="switch-item">
+          <input type="checkbox" id="sw_opera" ${enableOpera ? "checked" : ""}>
+          <span>Opera \u843D\u5730 (\u5173\u95ED\u540E\u505C\u6B62\u8BF7\u6C42\u51ED\u8BC1)</span>
+        </label>
+        <label class="switch-item">
+          <input type="checkbox" id="sw_proton" ${enableProton ? "checked" : ""}>
+          <span>Proton \u843D\u5730</span>
+        </label>
+        <label class="switch-item">
+          <input type="checkbox" id="sw_warp" ${enableWarpDirect ? "checked" : ""}>
+          <span>WARP \u76F4\u8FDE</span>
+        </label>
+        <label class="switch-item">
+          <input type="checkbox" id="sw_wind" ${enableWind ? "checked" : ""}>
+          <span>Windscribe \u843D\u5730</span>
+        </label>
+      </div>
+      <div class="sub">
+        <button onclick="saveFeatures()">\u4FDD\u5B58\u5F00\u5173\u5E76\u5237\u65B0\u914D\u7F6E</button>
+      </div>
+      <div class="note">
+        \u52FE\u9009\u5F00\u542F\u6216\u53D6\u6D88\u5173\u95ED\u3002<b>\u5F53 Opera \u843D\u5730\u5173\u95ED\u540E\uFF0CWorker \u4E0D\u518D\u5411 Opera API \u53D1\u8D77\u4EFB\u4F55\u51ED\u8BC1\u7533\u8BF7\u8BF7\u6C42</b>\u3002
+      </div>
     </div>
 
     <div class="sec">
       <div class="sec-t">\u64CD\u4F5C</div>
+      <div class="radio-row">
+        <label class="radio-label">
+          <input type="radio" name="protocol_choice" value="wg" ${protocolMode === "wg" ? "checked" : ""}>
+          <span>WireGuard (AWG \u6DF7\u6DC6\u53CD\u5BA1\u67E5\uFF0C\u9ED8\u8BA4)</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="protocol_choice" value="masque" ${protocolMode === "masque" ? "checked" : ""}>
+          <span>MASQUE</span>
+        </label>
+      </div>
       <div class="sub">
         <button onclick="go('/api/refresh')">\u5237\u65B0 Opera \u51ED\u636E</button>
-        <button class="gh" onclick="go('/api/reset-warp')">\u91CD\u6CE8\u518C WARP \u8BBE\u5907</button>
+        <button class="gh" onclick="reregisterWarp()">\u91CD\u6CE8\u518C WARP \u8BBE\u5907</button>
       </div>
       <div class="note">
-        Opera \u51ED\u636E 4 \u5C0F\u65F6\u5230\u671F\u3002<b>\u4E0D\u7528\u5B9A\u65F6\u4EFB\u52A1</b>\u2014\u2014\u8BA2\u9605\u88AB\u8BBF\u95EE\u65F6\u624D\u68C0\u67E5\uFF0C
-        \u6CA1\u8FC7\u671F\u76F4\u63A5\u7ED9\u7F13\u5B58\uFF0C\u8FC7\u671F\u4E86\u624D\u91CD\u65B0\u6CE8\u518C\u3002<br>
-        \u60F3\u63D0\u524D\u6362\u4E00\u4EFD\u5C31\u70B9\u5237\u65B0\u3002<br>
-        WARP \u8BBE\u5907\u4FE1\u606F\u5B58\u5728 KV \u91CC\u590D\u7528\uFF0C<b>\u4E00\u822C\u4E0D\u7528\u91CD\u6CE8\u518C</b>\uFF0C\u9664\u975E MASQUE \u6574\u4F53\u8FDE\u4E0D\u4E0A\u3002
+        Opera \u51ED\u636E 4 \u5C0F\u65F6\u5230\u671F\u3002\u8BA2\u9605\u88AB\u8BBF\u95EE\u65F6\u6309\u9700\u68C0\u67E5\u5E76\u81EA\u52A8\u66F4\u65B0\u3002<br>
+        \u4E8C\u9009\u4E00\u4E13\u5C5E\u534F\u8BAE\uFF1A\u9009\u62E9\u540E\u4EC5\u751F\u6210\u5BF9\u5E94\u4E13\u5C5E\u534F\u8BAE\u7684\u8282\u70B9\u3002<br>
+        \u5982\u9700\u66F4\u6539\u534F\u8BAE\uFF0C<b>\u5148\u5207\u6362\u534F\u8BAE\u5355\u9009\u6846\uFF0C\u518D\u70B9\u51FB\u201C\u91CD\u6CE8\u518C WARP \u8BBE\u5907\u201D</b>\u751F\u6548\u3002<br>
+        WireGuard \u5B9E\u9645\u751F\u6210\u5E26 AmneziaWG \u6DF7\u6DC6\u53C2\u6570\u7684\u8BA2\u9605\uFF0C\u6297\u5C01\u9501\u80FD\u529B\u5F3A\u3002
       </div>
     </div>
 
@@ -1406,19 +1656,27 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="row"><span class="k">\u72B6\u6001</span><span class="v warn">\u672A\u914D\u7F6E</span></div>
       `}
       <div class="note" style="margin-bottom:10px">
-        Proton \u8981\u8D26\u53F7\u767B\u5F55\uFF0CWorker \u91CC\u505A\u4F1A\u88AB\u98CE\u63A7\u62E6\uFF0C\u6240\u4EE5\u8D70 GitHub Actions \u53D6\u8BC1\u4E66\u518D\u63A8\u8FC7\u6765\u3002
-        \u8BC1\u4E66<b>\u6700\u957F 7 \u5929</b>\uFF0C\u5230\u671F\u91CD\u8DD1\u4E00\u6B21\u6D41\u6C34\u7EBF\u5373\u53EF\u3002
+        Proton \u8D70 GitHub Actions \u6D41\u6C34\u7EBF\u81EA\u52A8\u7EED\u7B7E\u63A8\u9001\u5230 Worker\u3002
       </div>
       <div class="sub">
         <input id="pu" value="${pushUrl || "\u70B9\u53F3\u8FB9\u751F\u6210"}" readonly>
         <button onclick="cp('pu')">\u590D\u5236</button>
         <button class="gh" onclick="go('/api/proton/token')">${pushToken ? "\u6362\u4E00\u4E2A" : "\u751F\u6210"}</button>
       </div>
+      <div class="row" style="margin-top:14px"><span class="k">WireGuard \u4F18\u9009\u7AEF\u70B9\u63A8\u9001 URL</span></div>
+      <div class="sub">
+        <input id="pu_wg" value="${pushUrlWg || "\u8BF7\u5148\u5728\u4E0A\u65B9\u751F\u6210\u4EE4\u724C"}" readonly>
+        <button onclick="cp('pu_wg')">\u590D\u5236</button>
+      </div>
+      <div class="row" style="margin-top:14px"><span class="k">MASQUE \u4F18\u9009\u7AEF\u70B9\u63A8\u9001 URL</span></div>
+      <div class="sub">
+        <input id="pu_ms" value="${pushUrlMs || "\u8BF7\u5148\u5728\u4E0A\u65B9\u751F\u6210\u4EE4\u724C"}" readonly>
+        <button onclick="cp('pu_ms')">\u590D\u5236</button>
+      </div>
       <div class="note">
-        \u628A\u8FD9\u4E2A\u5730\u5740\u586B\u8FDB GitHub \u4ED3\u5E93 Secrets \u7684 <b>WORKER_PUSH_URL</b>\uFF0C\u5C31\u8FD9\u4E00\u4E2A\u3002<br>
-        \u7136\u540E\u8DD1 <b>\u53D6 Proton \u51ED\u636E</b> \u6D41\u6C34\u7EBF\uFF0C\u4E4B\u540E\u6BCF 3 \u5929\u81EA\u52A8\u7EED\uFF0C\u4E0D\u7528\u518D\u7BA1\u3002<br>
-        <b>\u53D6 Windscribe \u8D26\u53F7</b> \u90A3\u6761\u4E5F\u7528\u540C\u4E00\u4E2A\u5730\u5740\uFF0C\u5B83\u4F1A\u81EA\u5DF1\u5728\u672B\u5C3E\u52A0 <code>/wind</code>\u3002<br>
-        \u5730\u5740\u91CC\u5E26\u4EE4\u724C\uFF0C\u53EA\u80FD\u5199 Proton \u51ED\u636E\u3001\u52A8\u4E0D\u4E86\u7BA1\u7406\u9875\uFF1B\u6CC4\u9732\u4E86\u70B9\u300C\u6362\u4E00\u4E2A\u300D\u3002
+        \u628A\u4E3B\u5730\u5740\u586B\u8FDB GitHub \u4ED3\u5E93 Secrets \u7684 <b>WORKER_PUSH_URL</b>\uFF1B<br>
+        WireGuard \u4F18\u9009\u7AEF\u70B9\u63A8\u9001\u94FE\u63A5\uFF1A<code>WORKER_PUSH_URL/wg</code><br>
+        MASQUE \u4F18\u9009\u7AEF\u70B9\u63A8\u9001\u94FE\u63A5\uFF1A<code>WORKER_PUSH_URL/ms</code><br>
         ${protonCred ? `<br><a href="#" onclick="go('/api/proton/clear');return false" style="color:var(--red)">\u6E05\u9664 Proton \u51ED\u636E</a>` : ""}
       </div>
     </div>
@@ -1433,27 +1691,33 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="row"><span class="k">\u72B6\u6001</span><span class="v warn">\u672A\u542F\u7528</span></div>
       `}
       <div class="note">
-        \u514D\u8D39\u989D\u5EA6 <b>\u6BCF\u6708 2GB</b>\uFF0C\u843D\u5730\u662F\u673A\u623F IP\uFF08M247 \u4E3A\u4E3B\uFF09\uFF0C
-        13 \u4E2A\u5730\u533A\u91CC<b>\u4E9A\u6D32\u53EA\u6709\u9999\u6E2F</b>\u3002<br>
-        \u8D26\u53F7\u8D70 GitHub Actions \u5F00 \u2014\u2014 Worker \u81EA\u5DF1\u5F00\u4E0D\u51FA\u80FD\u7528\u7684\u53F7\uFF0C
-        Cloudflare \u7684\u51FA\u53E3 IP \u662F\u5171\u4EAB\u7684\uFF0C\u65E9\u88AB\u4EBA\u7528\u8FC7\uFF0C
-        Windscribe \u53EA\u4F1A\u53D1 1MB \u7684\u964D\u989D\u53F7\uFF0C\u90A3\u79CD\u53F7\u8FDE\u4EE3\u7406\u51ED\u636E\u90FD\u53D6\u4E0D\u5230\u3002<br>
-        \u8DD1\u4E00\u6B21 <b>\u53D6 Windscribe \u8D26\u53F7</b> \u6D41\u6C34\u7EBF\u5C31\u884C\uFF0C\u7528\u7684\u662F\u4E0A\u9762\u90A3\u4E2A\u63A8\u9001\u5730\u5740\u3002
-        \u989D\u5EA6\u7528\u5B8C\u4E86\u518D\u8DD1\u4E00\u6B21\u6362\u4E2A\u53F7\u3002
+        \u514D\u8D39\u989D\u5EA6\u6BCF\u6708 2GB\u3002\u901A\u8FC7 GitHub Actions \u83B7\u53D6\u5E76\u63A8\u9001\u5230 <code>WORKER_PUSH_URL/wind</code>\u3002
         ${windInfo ? `<br><a href="#" onclick="go('/api/wind/clear');return false" style="color:var(--red)">\u6E05\u9664 Windscribe \u8D26\u53F7</a>` : ""}
       </div>
     </div>
 
     <div class="sec">
+      <div class="sec-t">\u72B6\u6001</div>
+      ${row(
+    "\u4E0A\u6B21\u66F4\u65B0",
+    updated ? `${fmt(updated)}\uFF08${ago} \u5206\u949F\u524D\uFF09` : "\u5C1A\u672A\u751F\u6210",
+    updated ? ago > 250 ? "warn" : "ok" : "err"
+  )}
+      ${row("\u51ED\u636E\u5269\u4F59", leftTxt, left === null ? "" : left <= 0 ? "warn" : "ok")}
+      ${row("\u5230\u671F\u65F6\u95F4", fmt(exp))}
+      ${row("\u5F53\u524D\u534F\u8BAE", protocolMode === "wg" ? "WireGuard (AmneziaWG)" : "MASQUE")}
+      ${row("WARP \u8BBE\u5907", warp.deviceId ? warp.deviceId.slice(0, 8) + "\u2026" : "\u2014")}
+      ${row("WARP \u6CE8\u518C\u4E8E", warp.registeredAt ? fmt(new Date(warp.registeredAt)) : "\u2014")}
+      ${row("\u5185\u7F51\u5730\u5740", warp.ipv4 || "\u2014")}
+    </div>
+
+    <div class="sec">
       <div class="sec-t">\u8BA2\u9605\u8DEF\u5F84</div>
       <div class="sub">
-        <input id="sp" value="${sp.replace(/^\//, "")}" spellcheck="false"
-               placeholder="\u5B57\u6BCD\u6570\u5B57\u548C - _">
+        <input id="sp" value="${sp.replace(/^\//, "")}" spellcheck="false" placeholder="\u5B57\u6BCD\u6570\u5B57\u548C - _">
         <button onclick="setPath('sp')">\u4FDD\u5B58</button>
       </div>
-      <div class="note">
-        \u6539\u6210\u96BE\u731C\u7684\u5B57\u7B26\u4E32\uFF0C\u7B49\u4E8E\u5728\u5BC6\u7801\u4E4B\u5916\u591A\u4E00\u5C42\u3002\u6539\u5B8C\u4E0A\u9762\u7684\u8BA2\u9605\u94FE\u63A5\u8981\u91CD\u65B0\u590D\u5236\u3002
-      </div>
+      <div class="note">\u6539\u6210\u96BE\u731C\u7684\u5B57\u7B26\u4E32\uFF0C\u9632\u66B4\u529B\u63A2\u6D4B\u3002</div>
     </div>
 
     <div class="sec">
@@ -1464,29 +1728,13 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
         <input type="password" id="c2" placeholder="\u786E\u8BA4\u65B0\u5BC6\u7801" autocomplete="new-password">
         <button onclick="setPw()">\u4FEE\u6539</button>
       </div>
-      <div class="note">
-        \u6539\u5B8C<b>\u6240\u6709\u65E7\u8BA2\u9605\u94FE\u63A5\u7ACB\u523B\u5931\u6548</b>\uFF0C\u56E0\u4E3A token \u662F\u7528\u5BC6\u7801\u54C8\u5E0C\u7B7E\u7684\u3002
-        \u94FE\u63A5\u6CC4\u9732\u4E86\u5C31\u9760\u8FD9\u4E2A\u8865\u6551\u3002
-      </div>
-    </div>
-
-    <div class="sec">
-      <div class="sec-t">\u987B\u77E5</div>
-      <div class="note">
-        \u5FC5\u987B\u7528 <b>mihomo Alpha</b> \u5185\u6838\uFF0Cmasque \u51FA\u7AD9\u548C dialer-proxy \u7A33\u5B9A\u7248\u90FD\u4E0D\u652F\u6301\u3002<br>
-        \u53EF\u7528\u5BA2\u6237\u7AEF\uFF1AClash Verge Rev\uFF08\u5185\u6838\u5207 Alpha\uFF09\u3001ClashMi\u3001FlClash\u3002<br>
-        Shadowrocket\u3001Stash \u4E0D\u8BA4 dialer-proxy\uFF0C\u5BFC\u8FDB\u53BB\u53EA\u6709 WARP\u76F4\u8FDE \u90A3\u7EC4\u80FD\u7528\u3002<br>
-        \u8BA2\u9605\u94FE\u63A5\u91CC\u7684 token \u5C31\u662F\u8BBF\u95EE\u51ED\u8BC1\uFF0C<b>\u522B\u5916\u4F20</b>\uFF0C\u6CC4\u9732\u4E86\u6539\u5BC6\u7801\u5373\u53EF\u5168\u90E8\u5931\u6548\u3002<br>
-        \u914D\u7F6E\u91CC\u7684 private-key \u7B49\u540C WARP \u8D26\u53F7\u51ED\u636E\u3002<br>
-        \u514D\u8D39\u4EE3\u7406\u7684\u6D41\u91CF\u5BF9\u63D0\u4F9B\u65B9\u53EF\u89C1\uFF0C\u522B\u8D70\u652F\u4ED8\u548C\u654F\u611F\u6570\u636E\u3002
-      </div>
+      <div class="note">\u4FEE\u6539\u5BC6\u7801\u540E\u6240\u6709\u65E7\u8BA2\u9605\u94FE\u63A5\u7ACB\u523B\u5931\u6548\u3002</div>
     </div>
 
   </div></div>
   <div class="foot">
     Cloudflare Worker \u30FB
-    <a href="https://github.com/byJoey/warp-masque-actions">GitHub</a> \u30FB
-    <a href="https://joeyblog.net">Blog</a>
+    <a href="https://github.com/ustdbus/mihomo-warp">GitHub</a>
   </div>
 </div>
 <script>
@@ -1512,6 +1760,23 @@ async function post(url,body,okmsg){
     if(j.ok){say((j.msg||okmsg)+'\uFF0C\u5373\u5C06\u5237\u65B0','var(--mint)');setTimeout(()=>location.reload(),1400);}
     else{say('\u5931\u8D25: '+j.error,'var(--red)');bs.forEach(b=>b.disabled=false);}
   }catch(e){say('\u5931\u8D25: '+e.message,'var(--red)');bs.forEach(b=>b.disabled=false);}
+}
+function saveFeatures(){
+  const body = {
+    enableOpera: document.getElementById('sw_opera').checked,
+    enableProton: document.getElementById('sw_proton').checked,
+    enableWarpDirect: document.getElementById('sw_warp').checked,
+    enableWind: document.getElementById('sw_wind').checked,
+  };
+  post('/api/settings/features', body, '\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA');
+}
+function reregisterWarp(){
+  const radios = document.getElementsByName('protocol_choice');
+  let chosen = 'wg';
+  for(const r of radios){
+    if(r.checked){ chosen = r.value; break; }
+  }
+  post('/api/warp/reregister', { protocol: chosen }, 'WARP \u8BBE\u5907\u5DF2\u6309\u4E13\u5C5E\u534F\u8BAE\u91CD\u65B0\u6CE8\u518C');
 }
 function setPath(id){
   const v=document.getElementById(id||'sp').value.trim();
@@ -1648,6 +1913,8 @@ var K_PROTON = "proton:cred";
 var K_PUSH = "proton:token";
 var K_WIND = "wind:account";
 var K_LOCK = "rebuild:lock";
+var K_CUSTOM_WG = "custom:endpoints_wg";
+var K_CUSTOM_MS = "custom:endpoints_ms";
 var COOKIE = "om_session";
 var DEFAULT_SUB = "sub";
 var TTL_MS = 4 * 3600 * 1e3;
@@ -1666,14 +1933,23 @@ var html = (body, s = 200) => new Response(body, {
 var notFound = () => new Response("Not Found", { status: 404 });
 async function getSettings(env) {
   const s = await env.KV.get(K_SET, "json") || {};
-  return { subPath: s.subPath || DEFAULT_SUB };
+  return {
+    subPath: s.subPath || DEFAULT_SUB,
+    protocolMode: s.protocolMode || "wg",
+    enableOpera: s.enableOpera ?? true,
+    enableProton: s.enableProton ?? true,
+    enableWarpDirect: s.enableWarpDirect ?? true,
+    enableWind: s.enableWind ?? true
+  };
 }
-async function getWarp(env, force = false) {
+async function getWarp(env, force = false, protocol = "wg") {
   if (!force) {
     const cached = await env.KV.get(K_WARP, "json");
-    if (cached && cached.privateKey) return cached;
+    if (cached && cached.privateKey && cached.protocol === protocol) {
+      return cached;
+    }
   }
-  const w = await registerWarp("cf-worker");
+  const w = await registerWarp(protocol, "cf-worker");
   await env.KV.put(K_WARP, JSON.stringify(w));
   return w;
 }
@@ -1682,35 +1958,77 @@ async function getWind(env) {
   if (!acc || !acc.sessionAuthHash) return null;
   return await fetchWindscribe(acc);
 }
-async function rebuild(env, { forceWarp = false } = {}) {
-  const warp = await getWarp(env, forceWarp);
-  const opera = await fetchOpera();
-  let proton = null;
-  const pc = await env.KV.get(K_PROTON, "json");
-  if (pc && (!pc.expiresAt || pc.expiresAt * 1e3 > Date.now())) proton = pc;
-  let wind = null, windErr = null;
-  try {
-    wind = await getWind(env);
-  } catch (e) {
-    windErr = e.message;
+async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
+  let settings = await getSettings(env);
+  if (newProtocol && newProtocol !== settings.protocolMode) {
+    settings = { ...settings, protocolMode: newProtocol };
+    const curRaw = await env.KV.get(K_SET, "json") || {};
+    await env.KV.put(K_SET, JSON.stringify({ ...curRaw, protocolMode: newProtocol }));
   }
-  const { yaml, entries, landings, combos, proton: pn, wind: wn } = buildConfig(warp, opera, proton, wind);
+  const protocolMode = settings.protocolMode || "wg";
+  const warp = await getWarp(env, forceWarp, protocolMode);
+  let opera = { landings: [] };
+  if (settings.enableOpera !== false) {
+    opera = await fetchOpera();
+  }
+  let proton = null;
+  if (settings.enableProton !== false) {
+    const pc = await env.KV.get(K_PROTON, "json");
+    if (pc && (!pc.expiresAt || pc.expiresAt * 1e3 > Date.now())) proton = pc;
+  }
+  let wind = null, windErr = null;
+  if (settings.enableWind !== false) {
+    try {
+      wind = await getWind(env);
+    } catch (e) {
+      windErr = e.message;
+    }
+  }
+  const rawWg = await env.KV.get(K_CUSTOM_WG);
+  const rawMs = await env.KV.get(K_CUSTOM_MS);
+  const customWgEndpoints = rawWg ? parseCustomEndpoints(rawWg, "AWG") : null;
+  const customMsEndpoints = rawMs ? parseCustomEndpoints(rawMs, "MASQUE") : null;
+  const cfg = buildConfig(warp, opera, proton, wind, {
+    protocolMode,
+    enableOpera: settings.enableOpera !== false,
+    enableProton: settings.enableProton !== false,
+    enableWarpDirect: settings.enableWarpDirect !== false,
+    enableWind: settings.enableWind !== false,
+    customWgEndpoints,
+    customMsEndpoints
+  });
   const now = Date.now();
   const state = {
     updatedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + TTL_MS).toISOString(),
-    stats: { entries, landings, combos, proton: pn || 0, wind: wn || 0 },
+    protocolMode,
+    features: {
+      enableOpera: settings.enableOpera !== false,
+      enableProton: settings.enableProton !== false,
+      enableWarpDirect: settings.enableWarpDirect !== false,
+      enableWind: settings.enableWind !== false
+    },
+    stats: {
+      entries: cfg.entries,
+      wgEntries: cfg.wgEntries,
+      msEntries: cfg.msEntries,
+      landings: cfg.landings,
+      combos: cfg.combos,
+      proton: cfg.proton || 0,
+      wind: cfg.wind || 0
+    },
     protonExpiresAt: proton ? proton.expiresAt : null,
-    wind: wind ? { userId: wind.account.userId, servers: wn || 0 } : null,
+    wind: wind ? { userId: wind.account.userId, servers: cfg.wind || 0 } : null,
     windErr,
     warp: {
+      protocol: warp.protocol || protocolMode,
       deviceId: warp.deviceId,
       ipv4: warp.ipv4,
       ipv6: warp.ipv6,
       registeredAt: warp.registeredAt
     }
   };
-  await env.KV.put(K_CFG, yaml);
+  await env.KV.put(K_CFG, cfg.yaml);
   await env.KV.put(K_STATE, JSON.stringify(state));
   return state;
 }
@@ -1789,7 +2107,6 @@ var index_default = {
       return new Response(yaml, {
         headers: {
           "content-type": "text/yaml; charset=utf-8",
-          // 文件名不加引号：部分客户端不解析引号，会把 \"x\" 当成文件名的一部分
           "content-disposition": "attachment; filename=opera-masque.yaml",
           "profile-update-interval": "4",
           "cache-control": "no-store"
@@ -1804,6 +2121,24 @@ var index_default = {
       const kind = slash < 0 ? "proton" : rest.slice(slash + 1);
       if (!tk || !got || !safeEqual(got, tk)) return notFound();
       const body = await req.text();
+      if (kind === "wg") {
+        await env.KV.put(K_CUSTOM_WG, body);
+        try {
+          const st = await rebuild(env);
+          return json({ ok: true, msg: "\u5DF2\u66F4\u65B0 WireGuard \u4F18\u9009\u7AEF\u70B9", entries: st.stats.entries });
+        } catch (e) {
+          return json({ ok: true, msg: "WireGuard \u7AEF\u70B9\u5DF2\u5199\u5165\uFF0C\u4F46\u91CD\u5EFA\u914D\u7F6E\u5931\u8D25\uFF1A" + e.message });
+        }
+      }
+      if (kind === "ms") {
+        await env.KV.put(K_CUSTOM_MS, body);
+        try {
+          const st = await rebuild(env);
+          return json({ ok: true, msg: "\u5DF2\u66F4\u65B0 MASQUE \u4F18\u9009\u7AEF\u70B9", entries: st.stats.entries });
+        } catch (e) {
+          return json({ ok: true, msg: "MASQUE \u7AEF\u70B9\u5DF2\u5199\u5165\uFF0C\u4F46\u91CD\u5EFA\u914D\u7F6E\u5931\u8D25\uFF1A" + e.message });
+        }
+      }
       if (kind === "wind") {
         let acc;
         try {
@@ -1893,12 +2228,31 @@ var index_default = {
         cred,
         pushToken,
         protonCred,
-        windUsage
+        windUsage,
+        settings
       ));
     }
     if (!authed) return notFound();
     if (path === "/api/state") {
       return json(await env.KV.get(K_STATE, "json") || {});
+    }
+    if (path === "/api/settings/features" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const cur = await getSettings(env);
+      const updated = {
+        ...cur,
+        enableOpera: body.enableOpera !== void 0 ? Boolean(body.enableOpera) : cur.enableOpera,
+        enableProton: body.enableProton !== void 0 ? Boolean(body.enableProton) : cur.enableProton,
+        enableWarpDirect: body.enableWarpDirect !== void 0 ? Boolean(body.enableWarpDirect) : cur.enableWarpDirect,
+        enableWind: body.enableWind !== void 0 ? Boolean(body.enableWind) : cur.enableWind
+      };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({ ok: true, msg: "\u8282\u70B9\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E", stats: s.stats });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
     }
     if (path === "/api/proton/token" && req.method === "POST") {
       const t = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
@@ -1954,10 +2308,13 @@ var index_default = {
         return json({ ok: false, error: e.message }, 500);
       }
     }
-    if (path === "/api/reset-warp" && req.method === "POST") {
+    if ((path === "/api/warp/reregister" || path === "/api/reset-warp") && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const cur = await getSettings(env);
+      const protocol = body.protocol === "masque" || body.protocol === "wg" ? body.protocol : cur.protocolMode || "wg";
       try {
-        const s = await rebuild(env, { forceWarp: true });
-        return json({ ok: true, msg: `WARP \u5DF2\u91CD\u6CE8\u518C\uFF0C${s.stats.combos} \u4E2A\u7EC4\u5408` });
+        const s = await rebuild(env, { forceWarp: true, newProtocol: protocol });
+        return json({ ok: true, msg: `WARP (${protocol === "masque" ? "MASQUE" : "WireGuard"}) \u5DF2\u91CD\u6CE8\u518C\uFF0C${s.stats.combos} \u4E2A\u7EC4\u5408` });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }

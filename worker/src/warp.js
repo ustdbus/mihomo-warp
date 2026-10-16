@@ -26,8 +26,60 @@ function cfTime() {
   return new Date().toISOString().replace("Z", "+00:00");
 }
 
-/** 注册一台新 WARP 设备并把 MASQUE 公钥挂上去。 */
-export async function registerWarp(deviceName = "cf-worker") {
+/** 注册纯 WireGuard (Curve25519) WARP 设备，绝不执行 PATCH，保持服务端公钥永久有效。 */
+export async function registerWireGuard(deviceName = "cf-worker") {
+  const xkp = await crypto.subtle.generateKey(
+    { name: "X25519" }, true, ["deriveKey", "deriveBits"]);
+  const wgPubRaw = await crypto.subtle.exportKey("raw", xkp.publicKey);
+  const wgPub = b64(wgPubRaw);
+  const wgPkcs8 = await crypto.subtle.exportKey("pkcs8", xkp.privateKey);
+  const wgPriv = b64(new Uint8Array(wgPkcs8).slice(-32));
+
+  const reg = await fetch(`${API}/reg`, {
+    method: "POST",
+    headers: H,
+    body: JSON.stringify({
+      key: wgPub,
+      install_id: "",
+      fcm_token: "",
+      tos: cfTime(),
+      model: "PC",
+      serial_number: randHex(8),
+      os_version: "",
+      key_type: "curve25519",
+      tunnel_type: "wireguard",
+      locale: "en-US",
+    }),
+  });
+  if (!reg.ok) {
+    throw new Error(`WARP WireGuard注册失败 ${reg.status}: ${(await reg.text()).slice(0, 200)}`);
+  }
+  const acc = await reg.json();
+
+  let reserved = [0, 0, 0];
+  if (acc.config?.client_id) {
+    try {
+      const rawCid = atob(acc.config.client_id);
+      reserved = [...rawCid].map((c) => c.charCodeAt(0));
+    } catch (_) {}
+  }
+  const wgPeerPub = acc.config?.peers?.[0]?.public_key || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
+
+  return {
+    protocol: "wg",
+    deviceId: acc.id,
+    token: acc.token,
+    privateKey: wgPriv,
+    peerPublicKey: wgPeerPub,
+    reserved: reserved,
+    ipv4: acc.config?.interface?.addresses?.v4 || "172.16.0.2",
+    ipv6: acc.config?.interface?.addresses?.v6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963",
+    registeredAt: new Date().toISOString(),
+  };
+}
+
+/** 注册纯 MASQUE (P-256) WARP 设备。 */
+export async function registerMasque(deviceName = "cf-worker") {
   const reg = await fetch(`${API}/reg`, {
     method: "POST",
     headers: H,
@@ -49,12 +101,10 @@ export async function registerWarp(deviceName = "cf-worker") {
   }
   const acc = await reg.json();
 
-  // MASQUE 用 P-256，和 WireGuard 那套密钥不通用
   const kp = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const spki = b64(await crypto.subtle.exportKey("spki", kp.publicKey));
   const pkcs8 = b64(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
-  // mihomo 要 SEC1，WebCrypto 只给 PKCS8，得转一道
   const sec1 = pkcs8ToSec1(pkcs8);
 
   const patch = await fetch(`${API}/reg/${acc.id}`, {
@@ -72,21 +122,29 @@ export async function registerWarp(deviceName = "cf-worker") {
   }
   const up = await patch.json();
 
-  // peer 公钥回来是 PEM，mihomo 要剥掉头尾的裸 base64
   const pem = up.config?.peers?.[0]?.public_key || "";
   const peerPub = pem.includes("-----")
     ? pem.split("\n").filter((l) => l && !l.startsWith("-----")).join("")
     : pem;
 
   return {
+    protocol: "masque",
     deviceId: acc.id,
     token: acc.token,
     privateKey: sec1,
     peerPublicKey: peerPub,
-    ipv4: up.config?.interface?.addresses?.v4 || acc.config?.interface?.addresses?.v4,
-    ipv6: up.config?.interface?.addresses?.v6 || acc.config?.interface?.addresses?.v6,
+    ipv4: up.config?.interface?.addresses?.v4 || acc.config?.interface?.addresses?.v4 || "172.16.0.2",
+    ipv6: up.config?.interface?.addresses?.v6 || acc.config?.interface?.addresses?.v6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963",
     registeredAt: new Date().toISOString(),
   };
+}
+
+/** 注册 WARP 设备：按选择的专属协议（默认 wg）二选一独立注册。 */
+export async function registerWarp(protocol = "wg", deviceName = "cf-worker") {
+  if (protocol === "masque") {
+    return registerMasque(deviceName);
+  }
+  return registerWireGuard(deviceName);
 }
 
 /** PKCS8 -> SEC1(RFC 5915)，带 P-256 曲线参数。
