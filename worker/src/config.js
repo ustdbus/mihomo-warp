@@ -1,23 +1,7 @@
 // 生成 mihomo 配置：支持 WireGuard (AmneziaWG) 或 MASQUE 专属协议与多落地组合。
 
-// 实测 48 个大陆直连极速优化 Cloudflare AWG 端点池（覆盖香港、东京、新加坡、圣何塞、法兰克福等亚太与全球核心节点）
+// 实测 20 个大陆直连极速优化 Cloudflare AWG 端点池（覆盖东京、香港、新加坡亚太核心节点）
 export const AWG_OPTIMIZED_ENDPOINTS = [
-  { ip: "162.159.192.1", port: 500, tag: "AWG-香港1" },
-  { ip: "162.159.192.2", port: 500, tag: "AWG-香港2" },
-  { ip: "162.159.193.1", port: 500, tag: "AWG-香港3" },
-  { ip: "162.159.193.2", port: 500, tag: "AWG-香港4" },
-  { ip: "162.159.195.1", port: 500, tag: "AWG-香港5" },
-  { ip: "162.159.195.2", port: 500, tag: "AWG-香港6" },
-  { ip: "188.114.96.1", port: 500, tag: "AWG-香港7" },
-  { ip: "188.114.97.1", port: 500, tag: "AWG-香港8" },
-  { ip: "162.159.192.3", port: 4500, tag: "AWG-新加坡1" },
-  { ip: "162.159.192.4", port: 4500, tag: "AWG-新加坡2" },
-  { ip: "162.159.193.3", port: 4500, tag: "AWG-新加坡3" },
-  { ip: "162.159.193.4", port: 4500, tag: "AWG-新加坡4" },
-  { ip: "162.159.195.3", port: 4500, tag: "AWG-新加坡5" },
-  { ip: "162.159.195.4", port: 4500, tag: "AWG-新加坡6" },
-  { ip: "188.114.98.1", port: 4500, tag: "AWG-新加坡7" },
-  { ip: "188.114.99.1", port: 4500, tag: "AWG-新加坡8" },
   { ip: "162.159.192.5", port: 1701, tag: "AWG-东京1" },
   { ip: "162.159.192.6", port: 1701, tag: "AWG-东京2" },
   { ip: "162.159.193.5", port: 1701, tag: "AWG-东京3" },
@@ -26,30 +10,18 @@ export const AWG_OPTIMIZED_ENDPOINTS = [
   { ip: "162.159.195.6", port: 1701, tag: "AWG-东京6" },
   { ip: "188.114.96.2", port: 1701, tag: "AWG-东京7" },
   { ip: "188.114.97.2", port: 1701, tag: "AWG-东京8" },
-  { ip: "162.159.192.7", port: 8443, tag: "AWG-首尔1" },
-  { ip: "162.159.192.8", port: 8443, tag: "AWG-首尔2" },
-  { ip: "162.159.193.7", port: 8443, tag: "AWG-首尔3" },
-  { ip: "162.159.193.8", port: 8443, tag: "AWG-首尔4" },
-  { ip: "162.159.195.7", port: 8443, tag: "AWG-首尔5" },
-  { ip: "162.159.195.8", port: 8443, tag: "AWG-首尔6" },
-  { ip: "188.114.98.2", port: 8443, tag: "AWG-首尔7" },
-  { ip: "188.114.99.2", port: 8443, tag: "AWG-首尔8" },
-  { ip: "162.159.192.9", port: 443, tag: "AWG-美西1" },
-  { ip: "162.159.192.10", port: 443, tag: "AWG-美西2" },
-  { ip: "162.159.193.9", port: 443, tag: "AWG-美西3" },
-  { ip: "162.159.193.10", port: 443, tag: "AWG-美西4" },
-  { ip: "162.159.195.9", port: 443, tag: "AWG-美西5" },
-  { ip: "162.159.195.10", port: 443, tag: "AWG-美西6" },
-  { ip: "188.114.96.3", port: 443, tag: "AWG-美西7" },
-  { ip: "188.114.97.3", port: 443, tag: "AWG-美西8" },
-  { ip: "162.159.192.11", port: 4443, tag: "AWG-欧洲1" },
-  { ip: "162.159.192.12", port: 4443, tag: "AWG-欧洲2" },
-  { ip: "162.159.193.11", port: 4443, tag: "AWG-欧洲3" },
-  { ip: "162.159.193.12", port: 4443, tag: "AWG-欧洲4" },
-  { ip: "162.159.195.11", port: 4443, tag: "AWG-欧洲5" },
-  { ip: "162.159.195.12", port: 4443, tag: "AWG-欧洲6" },
-  { ip: "188.114.98.3", port: 4443, tag: "AWG-欧洲7" },
-  { ip: "188.114.99.3", port: 4443, tag: "AWG-欧洲8" },
+  { ip: "162.159.192.1", port: 500, tag: "AWG-香港1" },
+  { ip: "162.159.192.2", port: 500, tag: "AWG-香港2" },
+  { ip: "162.159.193.1", port: 500, tag: "AWG-香港3" },
+  { ip: "162.159.193.2", port: 500, tag: "AWG-香港4" },
+  { ip: "162.159.195.1", port: 500, tag: "AWG-香港5" },
+  { ip: "162.159.195.2", port: 500, tag: "AWG-香港6" },
+  { ip: "162.159.192.3", port: 4500, tag: "AWG-新加坡1" },
+  { ip: "162.159.192.4", port: 4500, tag: "AWG-新加坡2" },
+  { ip: "162.159.193.3", port: 4500, tag: "AWG-新加坡3" },
+  { ip: "162.159.193.4", port: 4500, tag: "AWG-新加坡4" },
+  { ip: "162.159.195.3", port: 4500, tag: "AWG-新加坡5" },
+  { ip: "162.159.195.4", port: 4500, tag: "AWG-新加坡6" },
 ];
 
 const V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
@@ -454,13 +426,21 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
 
-  // Proton 落地
+  // Proton 落地 (限制只读取日本节点)
   let protonNames = [];
   const protonByCC = {};
-  if (enableProton && proton && proton.servers && proton.servers.length) {
+  const jpProtonServers = (enableProton && proton && proton.servers && proton.servers.length)
+    ? proton.servers.filter((s) => {
+        const n = (s.name || "").toLowerCase();
+        const cc = (s.cc || "").toLowerCase();
+        return n.includes("日本") || n.startsWith("jp") || cc === "jp";
+      })
+    : [];
+
+  if (jpProtonServers.length) {
     if (protocolMode === "wg") {
-      // WireGuard 模式：全组合 (笛卡尔积，如 28 x 48)
-      for (const srv of proton.servers) {
+      // WireGuard 模式：全组合 (笛卡尔积，日本落地 x 接入点)
+      for (const srv of jpProtonServers) {
         for (const ent of entries) {
           const name = `${srv.name}@${ent}`;
           protonNames.push(name);
@@ -481,7 +461,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
       }
     } else {
       // MASQUE 模式：轮询 v4Entries
-      proton.servers.forEach((srv, i) => {
+      jpProtonServers.forEach((srv, i) => {
         const ent = v4Entries[i % v4Entries.length];
         protonNames.push(srv.name);
         const cc = srv.name.replace(/\d+$/, "");
@@ -677,7 +657,7 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
-    protonServers: (enableProton && proton?.servers) ? proton.servers.length : 0,
+    protonServers: jpProtonServers.length,
     windServers: (enableWind && wind?.servers) ? wind.servers.length : 0,
     enableOpera,
     enableProton,

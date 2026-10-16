@@ -425,22 +425,6 @@ async function fetchOpera() {
 
 // src/config.js
 var AWG_OPTIMIZED_ENDPOINTS = [
-  { ip: "162.159.192.1", port: 500, tag: "AWG-\u9999\u6E2F1" },
-  { ip: "162.159.192.2", port: 500, tag: "AWG-\u9999\u6E2F2" },
-  { ip: "162.159.193.1", port: 500, tag: "AWG-\u9999\u6E2F3" },
-  { ip: "162.159.193.2", port: 500, tag: "AWG-\u9999\u6E2F4" },
-  { ip: "162.159.195.1", port: 500, tag: "AWG-\u9999\u6E2F5" },
-  { ip: "162.159.195.2", port: 500, tag: "AWG-\u9999\u6E2F6" },
-  { ip: "188.114.96.1", port: 500, tag: "AWG-\u9999\u6E2F7" },
-  { ip: "188.114.97.1", port: 500, tag: "AWG-\u9999\u6E2F8" },
-  { ip: "162.159.192.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
-  { ip: "162.159.192.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57612" },
-  { ip: "162.159.193.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57613" },
-  { ip: "162.159.193.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
-  { ip: "162.159.195.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57615" },
-  { ip: "162.159.195.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" },
-  { ip: "188.114.98.1", port: 4500, tag: "AWG-\u65B0\u52A0\u57617" },
-  { ip: "188.114.99.1", port: 4500, tag: "AWG-\u65B0\u52A0\u57618" },
   { ip: "162.159.192.5", port: 1701, tag: "AWG-\u4E1C\u4EAC1" },
   { ip: "162.159.192.6", port: 1701, tag: "AWG-\u4E1C\u4EAC2" },
   { ip: "162.159.193.5", port: 1701, tag: "AWG-\u4E1C\u4EAC3" },
@@ -449,30 +433,18 @@ var AWG_OPTIMIZED_ENDPOINTS = [
   { ip: "162.159.195.6", port: 1701, tag: "AWG-\u4E1C\u4EAC6" },
   { ip: "188.114.96.2", port: 1701, tag: "AWG-\u4E1C\u4EAC7" },
   { ip: "188.114.97.2", port: 1701, tag: "AWG-\u4E1C\u4EAC8" },
-  { ip: "162.159.192.7", port: 8443, tag: "AWG-\u9996\u5C141" },
-  { ip: "162.159.192.8", port: 8443, tag: "AWG-\u9996\u5C142" },
-  { ip: "162.159.193.7", port: 8443, tag: "AWG-\u9996\u5C143" },
-  { ip: "162.159.193.8", port: 8443, tag: "AWG-\u9996\u5C144" },
-  { ip: "162.159.195.7", port: 8443, tag: "AWG-\u9996\u5C145" },
-  { ip: "162.159.195.8", port: 8443, tag: "AWG-\u9996\u5C146" },
-  { ip: "188.114.98.2", port: 8443, tag: "AWG-\u9996\u5C147" },
-  { ip: "188.114.99.2", port: 8443, tag: "AWG-\u9996\u5C148" },
-  { ip: "162.159.192.9", port: 443, tag: "AWG-\u7F8E\u897F1" },
-  { ip: "162.159.192.10", port: 443, tag: "AWG-\u7F8E\u897F2" },
-  { ip: "162.159.193.9", port: 443, tag: "AWG-\u7F8E\u897F3" },
-  { ip: "162.159.193.10", port: 443, tag: "AWG-\u7F8E\u897F4" },
-  { ip: "162.159.195.9", port: 443, tag: "AWG-\u7F8E\u897F5" },
-  { ip: "162.159.195.10", port: 443, tag: "AWG-\u7F8E\u897F6" },
-  { ip: "188.114.96.3", port: 443, tag: "AWG-\u7F8E\u897F7" },
-  { ip: "188.114.97.3", port: 443, tag: "AWG-\u7F8E\u897F8" },
-  { ip: "162.159.192.11", port: 4443, tag: "AWG-\u6B27\u6D321" },
-  { ip: "162.159.192.12", port: 4443, tag: "AWG-\u6B27\u6D322" },
-  { ip: "162.159.193.11", port: 4443, tag: "AWG-\u6B27\u6D323" },
-  { ip: "162.159.193.12", port: 4443, tag: "AWG-\u6B27\u6D324" },
-  { ip: "162.159.195.11", port: 4443, tag: "AWG-\u6B27\u6D325" },
-  { ip: "162.159.195.12", port: 4443, tag: "AWG-\u6B27\u6D326" },
-  { ip: "188.114.98.3", port: 4443, tag: "AWG-\u6B27\u6D327" },
-  { ip: "188.114.99.3", port: 4443, tag: "AWG-\u6B27\u6D328" }
+  { ip: "162.159.192.1", port: 500, tag: "AWG-\u9999\u6E2F1" },
+  { ip: "162.159.192.2", port: 500, tag: "AWG-\u9999\u6E2F2" },
+  { ip: "162.159.193.1", port: 500, tag: "AWG-\u9999\u6E2F3" },
+  { ip: "162.159.193.2", port: 500, tag: "AWG-\u9999\u6E2F4" },
+  { ip: "162.159.195.1", port: 500, tag: "AWG-\u9999\u6E2F5" },
+  { ip: "162.159.195.2", port: 500, tag: "AWG-\u9999\u6E2F6" },
+  { ip: "162.159.192.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
+  { ip: "162.159.192.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57612" },
+  { ip: "162.159.193.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57613" },
+  { ip: "162.159.193.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
+  { ip: "162.159.195.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57615" },
+  { ip: "162.159.195.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" }
 ];
 var V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 var V6 = [
@@ -934,9 +906,14 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
   let protonNames = [];
   const protonByCC = {};
-  if (enableProton && proton && proton.servers && proton.servers.length) {
+  const jpProtonServers = enableProton && proton && proton.servers && proton.servers.length ? proton.servers.filter((s) => {
+    const n = (s.name || "").toLowerCase();
+    const cc = (s.cc || "").toLowerCase();
+    return n.includes("\u65E5\u672C") || n.startsWith("jp") || cc === "jp";
+  }) : [];
+  if (jpProtonServers.length) {
     if (protocolMode === "wg") {
-      for (const srv of proton.servers) {
+      for (const srv of jpProtonServers) {
         for (const ent of entries) {
           const name = `${srv.name}@${ent}`;
           protonNames.push(name);
@@ -956,7 +933,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
         }
       }
     } else {
-      proton.servers.forEach((srv, i) => {
+      jpProtonServers.forEach((srv, i) => {
         const ent = v4Entries[i % v4Entries.length];
         protonNames.push(srv.name);
         const cc = srv.name.replace(/\d+$/, "");
@@ -1136,7 +1113,7 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
-    protonServers: enableProton && proton?.servers ? proton.servers.length : 0,
+    protonServers: jpProtonServers.length,
     windServers: enableWind && wind?.servers ? wind.servers.length : 0,
     enableOpera,
     enableProton,
@@ -1663,7 +1640,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     <div class="sec">
       <div class="sec-t">Proton \u843D\u5730</div>
       ${protonCred ? `
-      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0</span></div>
+      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u542F\u7528 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter((s2) => (s2.name || "").includes("\u65E5\u672C") || (s2.name || "").toUpperCase().startsWith("JP")).length : 0)} \u53F0\u65E5\u672C\u843D\u5730\uFF09</span></div>
       <div class="row"><span class="k">\u8BC1\u4E66\u5269\u4F59</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} \u5929\uFF08${pExp.toISOString().slice(0, 10)} \u5230\u671F\uFF09</span></div>
       ` : `
       <div class="row"><span class="k">\u72B6\u6001</span><span class="v warn">\u672A\u914D\u7F6E</span></div>

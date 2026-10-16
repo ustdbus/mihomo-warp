@@ -69,14 +69,14 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   // 纯 IPv4 机器上会全部 network is unreachable
   const dps = [...y.matchAll(/type: wireguard[\s\S]*?dialer-proxy: (\S+)/g)].map(m => m[1]);
   t(`Proton 接入点全是 IPv4 (${dps.length} 个)`,
-    dps.length === 3 && dps.every(d => !d.startsWith("v6-")));
+    dps.length === 2 && dps.every(d => !d.startsWith("v6-")));
 
   // 10.2.0.1 是隧道内网 DNS，配上会让解析请求自己路由回 Proton 节点，死循环
   t("Proton 节点不带隧道内 DNS", !/10\.2\.0\.1/.test(y));
 
   const gs2 = [...y.matchAll(/^  - name: (.+)$/gm)].map(m => m[1]);
   t("Proton线路 是 select 组", /- name: Proton线路\n    type: select/.test(y));
-  t("按国家分组", gs2.includes("Proton-日本") && gs2.includes("Proton-美国"));
+  t("按国家分组仅含日本", gs2.includes("Proton-日本") && !gs2.includes("Proton-美国"));
   t("有自动选择组", gs2.includes("Proton-自动"));
 
   const jp = y.split("  - name: Proton-日本")[1].split("\n  - name:")[0];
@@ -176,14 +176,14 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     ],
   }, null, { protocolMode: "wg" });
 
-  t("WG模式接入点为 48 个", rWg.entries === 48);
+  t("WG模式接入点默认 20 个", rWg.entries === 20);
   t("WG模式包含 Amnezia 混淆参数", rWg.yaml.includes("amnezia-wg-option:"));
   t("WG模式包含 jc/jmin/jmax", rWg.yaml.includes("jc: 4") && rWg.yaml.includes("jmin: 40"));
-  // 48 个 AWG 端点 x 2 个 Opera 落地 = 96 个 Opera 组合
-  t("WG模式 Opera 组合为 96 个 (48 x 2)", rWg.combos === 96);
-  // 48 个 AWG 端点 x 2 个 Proton 落地 = 96 个 Proton 全组合
-  t("WG模式 Proton 落地笛卡尔积全组合 (48 x 2 = 96)", rWg.proton === 96);
-  t("WG模式 Proton 组合节点名带 @", rWg.yaml.includes("日本1@AWG-香港1"));
+  // 20 个 AWG 端点 x 2 个 Opera 落地 = 40 个 Opera 组合
+  t("WG模式 Opera 组合为 40 个 (20 x 2)", rWg.combos === 40);
+  // 20 个 AWG 端点 x 1 个 Proton 日本落地 = 20 个 Proton 全组合
+  t("WG模式 Proton 落地笛卡尔积全组合 (20 x 1 = 20)", rWg.proton === 20);
+  t("WG模式 Proton 组合节点名带 @", rWg.yaml.includes("日本1@AWG-东京1"));
 
   // 自动选择组 proxies 为叶子节点，不能包含策略组名
   const autoGroup = rWg.yaml.split("  - name: ♻️ 自动选择")[1].split("\n  - name:")[0];

@@ -21,6 +21,5 @@ worker/mihomo*
 worker/*_test*
 worker/test_*
 worker/setup_mihomo.sh
-worker/persistent_ssh.py
-worker/direct_upload.py
-worker/upload_mihomo.py
+worker/*.py
+

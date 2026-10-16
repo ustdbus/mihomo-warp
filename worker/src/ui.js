@@ -410,7 +410,7 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     <div class="sec">
       <div class="sec-t">Proton 落地</div>
       ${protonCred ? `
-      <div class="row"><span class="k">状态</span><span class="v ok">已配置 ${protonCred.servers.length} 台</span></div>
+      <div class="row"><span class="k">状态</span><span class="v ok">已配置 ${protonCred.servers.length} 台（启用 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter(s => (s.name || '').includes('日本') || (s.name || '').toUpperCase().startsWith('JP')).length : 0)} 台日本落地）</span></div>
       <div class="row"><span class="k">证书剩余</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} 天（${pExp.toISOString().slice(0, 10)} 到期）</span></div>
       ` : `
       <div class="row"><span class="k">状态</span><span class="v warn">未配置</span></div>
