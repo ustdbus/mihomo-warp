@@ -516,7 +516,6 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     udp: true
     mtu: 1120
     keepalive: 25
-    remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       }
     }
@@ -561,9 +560,9 @@ ${p(names)}
 
   - name: ${srvName}-自动优选
     type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50
+    url: http://cp.cloudflare.com/generate_204
+    interval: 86400
+    tolerance: 80
     lazy: true
     proxies:
 ${q(names)}`
@@ -580,9 +579,9 @@ ${p(matchedServers.length ? matchedServers : names)}
 
   - name: Proton-${cc}-自动
     type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 60
+    url: http://cp.cloudflare.com/generate_204
+    interval: 86400
+    tolerance: 80
     lazy: true
     proxies:
 ${q(names)}`;
@@ -592,7 +591,7 @@ ${q(names)}`;
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) =>
     `  - name: WS-${loc}
     type: url-test
-    url: http://www.gstatic.com/generate_204
+    url: http://cp.cloudflare.com/generate_204
     interval: 300
     tolerance: 100
     lazy: true
@@ -600,11 +599,11 @@ ${q(names)}`;
 ${q(names)}`).join("\n\n");
 
   // 整理叶子节点：供 ♻️ 自动选择 与 🔄 故障转移 使用（绝不包含策略组名）
+  // 核心保护：Proton 官方免费凭据严格限制单设备会话，绝不塞进后台频繁轮询的自动测速组，防止客户端后台频繁踢线导致崩溃
   const leafProxies = [];
   for (const tags of Object.values(byLoc)) {
     leafProxies.push(...tags);
   }
-  if (protonNames.length) leafProxies.push(...protonNames);
   if (windNames.length) leafProxies.push(...windNames);
   if (enableWarpDirect) leafProxies.push(...entries);
   if (leafProxies.length === 0) leafProxies.push(...entries);

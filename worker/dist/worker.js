@@ -985,7 +985,6 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     udp: true
     mtu: 1120
     keepalive: 25
-    remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       }
     }
@@ -1025,9 +1024,9 @@ ${p(names)}
 
   - name: ${srvName}-\u81EA\u52A8\u4F18\u9009
     type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50
+    url: http://cp.cloudflare.com/generate_204
+    interval: 86400
+    tolerance: 80
     lazy: true
     proxies:
 ${q(names)}`
@@ -1043,9 +1042,9 @@ ${p(matchedServers.length ? matchedServers : names)}
 
   - name: Proton-${cc}-\u81EA\u52A8
     type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 60
+    url: http://cp.cloudflare.com/generate_204
+    interval: 86400
+    tolerance: 80
     lazy: true
     proxies:
 ${q(names)}`;
@@ -1053,7 +1052,7 @@ ${q(names)}`;
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
     type: url-test
-    url: http://www.gstatic.com/generate_204
+    url: http://cp.cloudflare.com/generate_204
     interval: 300
     tolerance: 100
     lazy: true
@@ -1063,7 +1062,6 @@ ${q(names)}`).join("\n\n");
   for (const tags of Object.values(byLoc)) {
     leafProxies.push(...tags);
   }
-  if (protonNames.length) leafProxies.push(...protonNames);
   if (windNames.length) leafProxies.push(...windNames);
   if (enableWarpDirect) leafProxies.push(...entries);
   if (leafProxies.length === 0) leafProxies.push(...entries);
