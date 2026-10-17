@@ -370,5 +370,57 @@ t("新密码能登上",
     page.includes('1.1.1.1'));
 }
 
+// ---- VPN Gate 地区配置与功能开关测试 ----
+{
+  reset();
+  await worker.fetch(post("/api/setup", { password: PW, confirm: PW }), env);
+  const c8 = (await worker.fetch(post("/login", { password: PW }), env))
+    .headers.get("set-cookie").split(";")[0];
+  const a8 = { cookie: c8 };
+
+  kv.set("warp:device", JSON.stringify({
+    privateKey: "FAKE", peerPublicKey: "FAKE", protocol: "wg",
+    ipv4: "172.16.0.2", ipv6: "2606::1", deviceId: "d", registeredAt: new Date().toISOString()
+  }));
+  kv.set("vpngate:nodes", JSON.stringify({
+    fetchedAt: Date.now(),
+    servers: [
+      {
+        name: "VG-日本-1", country: "日本", flag: "🇯🇵", ip: "123.45.67.89", port: 1194, proto: "udp", speed: 50000000,
+        ca: "-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----",
+        cert: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+        key: "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----",
+      }
+    ],
+    regions: {
+      "日本": { country: "日本", flag: "🇯🇵", count: 1, maxSpeedMbps: "50.0" }
+    },
+    totalParsed: 1,
+  }));
+
+  // 1. 保存所选地区
+  const rSetVg = await worker.fetch(post("/api/settings/vpngate-regions", { regions: ["日本"] }, a8), env);
+  const jSetVg = await rSetVg.json();
+  t("保存 VPN Gate 地区成功", rSetVg.status === 200 && jSetVg.ok);
+  const savedSettings = JSON.parse(kv.get("settings") || "{}");
+  t("settings 正确持久化 vpngateRegions",
+    Array.isArray(savedSettings.vpngateRegions) && savedSettings.vpngateRegions[0] === "日本");
+
+  // 2. 检查首页渲染中是否包含 VPN Gate 区域与复选框
+  const page = await (await worker.fetch(req("/", { headers: a8 }), env)).text();
+  t("首页渲染中包含 VPN Gate 专属卡片", page.includes("VPN Gate 落地 (开源学术)"));
+  t("首页渲染中包含日本复选框", page.includes('name="vpngate_region" value="日本"'));
+
+  // 3. 节点开关保存 enableVpnGate
+  const rFeat = await worker.fetch(post("/api/settings/features", {
+    enableOpera: true, enableProton: true, enableWarpDirect: true, enableWind: false, enableVpnGate: false
+  }, a8), env);
+  const jFeat = await rFeat.json();
+  t("保存节点开关成功", rFeat.status === 200 && jFeat.ok);
+  const featSettings = JSON.parse(kv.get("settings") || "{}");
+  t("settings 正确持久化 enableVpnGate 为 false", featSettings.enableVpnGate === false);
+}
+
 console.log(`\n通过 ${pass} 失败 ${fail}`);
 if (fail) process.exit(1);
+

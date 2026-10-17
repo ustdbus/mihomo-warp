@@ -24,4 +24,7 @@ worker/setup_mihomo.sh
 worker/*.py
 worker/*.yaml
 test_vps_verify.py
+check_ovpn_support.py
+inspect_vpngate.py
+
 

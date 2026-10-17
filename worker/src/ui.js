@@ -245,7 +245,7 @@ async function go(e){
 </body></html>`;
 }
 
-export function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage, settings = {}) {
+export function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage, settings = {}, vpngate = null) {
   const s = state || {};
   const warp = s.warp || {};
   const stat = s.stats || {};
@@ -255,6 +255,12 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
   const enableProton = settings.enableProton ?? true;
   const enableWarpDirect = settings.enableWarpDirect ?? true;
   const enableWind = settings.enableWind ?? true;
+  const enableVpnGate = settings.enableVpnGate ?? true;
+
+  const currentVgRegions = Array.isArray(settings?.vpngateRegions)
+    ? settings.vpngateRegions
+    : (Array.isArray(s.features?.vpngateRegions) ? s.features.vpngateRegions : ["日本", "韩国"]);
+  const activeVgRegions = new Set(currentVgRegions);
 
   const updated = s.updatedAt ? new Date(s.updatedAt) : null;
   const ago = updated ? Math.floor((Date.now() - updated.getTime()) / 60000) : null;
@@ -453,13 +459,14 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       </div>
       <div style="height:12px"></div>
       <div class="sec-t">落地服务</div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         <div class="cell"><div class="n">${!enableOpera ? "已关闭" : (stat.landings ? `${stat.landings} 台` : "—")}</div><div class="l">Opera 落地</div></div>
         <div class="cell"><div class="n">${!enableProton ? "已关闭" : ((stat.protonServers || (protonCred && protonCred.servers && protonCred.servers.length)) ? `${stat.protonServers || protonCred.servers.length} 台` : "—")}</div><div class="l">Proton 落地</div></div>
         <div class="cell"><div class="n">${!enableWind ? "已关闭" : (stat.windServers ? `${stat.windServers} 台` : (windInfo && windInfo.servers ? `${windInfo.servers} 台` : "—"))}</div><div class="l">Windscribe 落地</div></div>
+        <div class="cell"><div class="n">${!enableVpnGate ? "已关闭" : (stat.vpngateServers ? `${stat.vpngateServers} 台` : (vpngate?.servers ? `${vpngate.servers.length} 台` : "—"))}</div><div class="l">VPN Gate 落地</div></div>
       </div>
       <div class="note">
-        每个开启的落地和前置接入点进行笛卡尔积组合，任一路径故障都有冗余节点兜底。
+        每个开启的落地和前置接入点进行套娃拨号组合，任一路径故障都有冗余节点兜底。
       </div>
     </div>
 
@@ -468,7 +475,7 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       <div class="switch-grid">
         <label class="switch-item">
           <input type="checkbox" id="sw_opera" ${enableOpera ? "checked" : ""}>
-          <span>Opera 落地 (关闭后停止请求凭证)</span>
+          <span>Opera 落地</span>
         </label>
         <label class="switch-item">
           <input type="checkbox" id="sw_proton" ${enableProton ? "checked" : ""}>
@@ -481,6 +488,10 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
         <label class="switch-item">
           <input type="checkbox" id="sw_wind" ${enableWind ? "checked" : ""}>
           <span>Windscribe 落地</span>
+        </label>
+        <label class="switch-item">
+          <input type="checkbox" id="sw_vpngate" ${enableVpnGate ? "checked" : ""}>
+          <span>VPN Gate 落地 (筑波大学学术)</span>
         </label>
       </div>
       <div class="sub">
@@ -623,6 +634,53 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     </div>
 
     <div class="sec">
+      <div class="sec-t">VPN Gate 落地 (开源学术)</div>
+      ${vpngate ? `
+      <div class="row"><span class="k">状态</span><span class="v ok">在线（抓取到 ${vpngate.totalParsed || vpngate.servers?.length || 0} 台节点，精选覆盖 ${Object.keys(vpngate.regions || {}).length} 个国家/地区）</span></div>
+      <div class="row"><span class="k">抓取时间</span><span class="v">${vpngate.fetchedAt ? fmt(new Date(vpngate.fetchedAt)) : "—"}</span></div>
+      <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleVgListExpand(event)">
+        <span class="k" style="display:flex;align-items:center;gap:8px">
+          <span>VPN Gate 国家/地区选择（自由多选，不限连接数）</span>
+          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">收起列表 ▲</span>
+        </span>
+        <span class="v ok" id="vg_summary">已勾选 ${activeVgRegions.size} 个国家</span>
+      </div>
+      <div id="vg_regions_wrapper">
+        <div class="switch-grid" style="margin:10px 0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+          ${Object.values(vpngate.regions || {}).map((item) => {
+            const checked = currentVgRegions.includes(item.country);
+            return `
+            <label class="switch-item" style="cursor:pointer">
+              <input type="checkbox" name="vpngate_region" value="${item.country}" ${checked ? "checked" : ""} onchange="updateVgStats()">
+              <span style="display:flex;align-items:center;gap:6px;width:100%">
+                <span>${item.flag} ${item.country}</span>
+                <span style="font-size:10px;color:var(--dim);margin-left:auto">${item.count}台 (${item.maxSpeedMbps}M)</span>
+              </span>
+            </label>`;
+          }).join("")}
+        </div>
+        <div class="sub" style="margin-bottom:12px">
+          <button onclick="saveVpnGateRegions()">应用所选 VPN Gate 地区</button>
+          <button class="gh" type="button" onclick="selectVgAsia()">仅日韩亚太</button>
+          <button class="gh" type="button" onclick="toggleVgAll(true)">全选</button>
+          <button class="gh" type="button" onclick="toggleVgAll(false)">清空</button>
+        </div>
+      </div>
+      <div class="sub">
+        <button class="gh" onclick="go('/api/vpngate/refresh')">重新抓取节点</button>
+      </div>
+      ` : `
+      <div class="row"><span class="k">状态</span><span class="v warn">尚未获取节点</span></div>
+      <div class="sub">
+        <button onclick="go('/api/vpngate/refresh')">立即抓取 VPN Gate 节点</button>
+      </div>
+      `}
+      <div class="note" style="margin-top:10px">
+        VPN Gate 由日本筑波大学发起，全球志愿者提供服务。OpenVPN 协议 over WARP，无需单选 IP，直接勾选国家即可畅联。
+      </div>
+    </div>
+
+    <div class="sec">
       <div class="sec-t">状态</div>
       ${row("上次更新", updated ? `${fmt(updated)}（${ago} 分钟前）` : "尚未生成",
              updated ? (ago > 250 ? "warn" : "ok") : "err")}
@@ -690,9 +748,53 @@ function saveFeatures(){
     enableProton: document.getElementById('sw_proton').checked,
     enableWarpDirect: document.getElementById('sw_warp').checked,
     enableWind: document.getElementById('sw_wind').checked,
+    enableVpnGate: document.getElementById('sw_vpngate').checked,
   };
   post('/api/settings/features', body, '开关已保存并重建');
 }
+
+function toggleVgListExpand(e){
+  if(e && e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+  const wrap = document.getElementById('vg_regions_wrapper');
+  const btn = document.getElementById('btn_toggle_vg_list');
+  if(!wrap) return;
+  const isHidden = (wrap.style.display === 'none');
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if(btn) btn.textContent = isHidden ? '收起列表 ▲' : '展开列表 ▼';
+}
+
+function updateVgStats(){
+  const boxes = document.querySelectorAll('input[name="vpngate_region"]:checked');
+  const summary = document.getElementById('vg_summary');
+  if(summary){
+    summary.textContent = '已勾选 ' + boxes.length + ' 个国家';
+  }
+}
+
+function saveVpnGateRegions(){
+  const boxes = document.querySelectorAll('input[name="vpngate_region"]:checked');
+  const regions = Array.from(boxes).map(b => b.value);
+  if(regions.length === 0){
+    if(!confirm("未勾选任何 VPN Gate 国家，确定保存吗？(未勾选将不生成 VPN Gate 落地节点)")) return;
+  }
+  post('/api/settings/vpngate-regions', { regions: regions }, 'VPN Gate 落地设置已保存并重构配置');
+}
+
+function selectVgAsia(){
+  const asiaList = ["日本", "韩国", "台湾", "香港", "新加坡", "泰国", "越南", "马来西亚", "印度尼西亚", "菲律宾"];
+  document.querySelectorAll('input[name="vpngate_region"]').forEach(b => {
+    b.checked = asiaList.includes(b.value);
+  });
+  updateVgStats();
+}
+
+function toggleVgAll(checked){
+  document.querySelectorAll('input[name="vpngate_region"]').forEach(b => {
+    b.checked = checked;
+  });
+  updateVgStats();
+}
+
 function toggleRegionExpand(reg, e){
   if(e) e.stopPropagation();
   const d = document.getElementById('drawer_' + reg);

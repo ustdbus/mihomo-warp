@@ -303,6 +303,110 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     !rCustomTwo.yaml.includes("- name: 新加坡2\n"));
 }
 
+// VPN Gate (筑波大学学术开源 OpenVPN 节点套娃)
+{
+  const fakeVpnGate = {
+    fetchedAt: Date.now(),
+    servers: [
+      {
+        name: "VG-日本-1",
+        country: "日本",
+        flag: "🇯🇵",
+        ip: "123.45.67.89",
+        port: 1194,
+        proto: "udp",
+        speed: 50000000,
+        ca: "-----BEGIN CERTIFICATE-----\nMIIB_CA\n-----END CERTIFICATE-----",
+        cert: "-----BEGIN CERTIFICATE-----\nMIIB_CERT\n-----END CERTIFICATE-----",
+        key: "-----BEGIN PRIVATE KEY-----\nMIIE_KEY\n-----END PRIVATE KEY-----",
+        cipher: "AES-128-CBC",
+        auth: "SHA256",
+      },
+      {
+        name: "VG-日本-2",
+        country: "日本",
+        flag: "🇯🇵",
+        ip: "123.45.67.90",
+        port: 443,
+        proto: "tcp",
+        speed: 30000000,
+        ca: "-----BEGIN CERTIFICATE-----\nMIIB_CA\n-----END CERTIFICATE-----",
+        cert: "-----BEGIN CERTIFICATE-----\nMIIB_CERT\n-----END CERTIFICATE-----",
+        key: "-----BEGIN PRIVATE KEY-----\nMIIE_KEY\n-----END PRIVATE KEY-----",
+      },
+      {
+        name: "VG-韩国-1",
+        country: "韩国",
+        flag: "🇰🇷",
+        ip: "210.120.30.40",
+        port: 1194,
+        proto: "udp",
+        speed: 40000000,
+        ca: "-----BEGIN CERTIFICATE-----\nMIIB_CA\n-----END CERTIFICATE-----",
+        cert: "-----BEGIN CERTIFICATE-----\nMIIB_CERT\n-----END CERTIFICATE-----",
+        key: "-----BEGIN PRIVATE KEY-----\nMIIE_KEY\n-----END PRIVATE KEY-----",
+      },
+    ],
+    regions: {
+      "日本": { country: "日本", flag: "🇯🇵", count: 2, maxSpeedMbps: "50.0" },
+      "韩国": { country: "韩国", flag: "🇰🇷", count: 1, maxSpeedMbps: "40.0" },
+    },
+    totalParsed: 3,
+  };
+
+  // 1. 默认包含全部 2 个国家
+  const rAll = buildConfig(warp, opera, null, null, { protocolMode: "wg" }, fakeVpnGate);
+  const yAll = rAll.yaml;
+  const gsAll = [...yAll.matchAll(/^  - name: (.+)$/gm)].map((m) => m[1]);
+
+  t(`VPN Gate 生成 3 台落地服务器`, rAll.vpngateServers === 3);
+  t("生成 OpenVPN 协议节点", yAll.includes("type: openvpn"));
+  t("包含 ca, cert, key 多行证书", yAll.includes("ca: |") && yAll.includes("cert: |") && yAll.includes("key: |"));
+  t("保留 VPNGate-日本 且为 select 组", /- name: VPNGate-日本\n    type: select/.test(yAll));
+  t("保留 VPNGate-韩国 且为 select 组", /- name: VPNGate-韩国\n    type: select/.test(yAll));
+  t("不含多余顶层组 VPNGate线路", !gsAll.includes("VPNGate线路"));
+
+  // 节点名与 dialer-proxy
+  const vgDps = [...yAll.matchAll(/name: "VG-[^"]+"[\s\S]*?dialer-proxy: (\S+)/g)].map((m) => m[1]);
+  t(`VPN Gate 套娃节点均有 dialer-proxy 且为 IPv4 (${vgDps.length} 个)`,
+    vgDps.length === 60 && vgDps.every((d) => !d.startsWith("v6-"))); // 3 台 * 20 个 WG 接入点 = 60
+
+  // 落地 IP 加防环路 DIRECT 规则
+  t("物理 IP 写入 DIRECT 防环路规则",
+    yAll.includes("IP-CIDR,123.45.67.89/32,DIRECT,no-resolve") &&
+    yAll.includes("IP-CIDR,210.120.30.40/32,DIRECT,no-resolve"));
+
+  // 2. 指定只勾选日本
+  const rJpOnly = buildConfig(warp, opera, null, null, {
+    protocolMode: "wg",
+    vpngateRegions: ["日本"],
+  }, fakeVpnGate);
+  t("只勾选日本时落地为 2 台", rJpOnly.vpngateServers === 2);
+  t("只勾选日本时有 VPNGate-日本，无 VPNGate-韩国",
+    rJpOnly.yaml.includes("VPNGate-日本") && !rJpOnly.yaml.includes("VPNGate-韩国"));
+  t("只含日本套娃节点，不含韩国节点",
+    rJpOnly.yaml.includes("VG-日本-1@") && !rJpOnly.yaml.includes("VG-韩国-1@"));
+
+  // 3. 关闭 VPN Gate 开关
+  const rOff = buildConfig(warp, opera, null, null, {
+    protocolMode: "wg",
+    enableVpnGate: false,
+  }, fakeVpnGate);
+  t("关闭 VPN Gate 后不生成 VPNGate 策略组", !rOff.yaml.includes("VPNGate-"));
+  t("关闭 VPN Gate 后不生成 OpenVPN 节点", !rOff.yaml.includes("type: openvpn"));
+
+  // 4. 悬空引用检查
+  const gsec = yAll.slice(yAll.indexOf("proxy-groups:"), yAll.indexOf("rule-providers:"));
+  const refs = [...gsec.matchAll(/^      - "?([^"\n]+)"?$/gm)].map((m) => m[1].trim());
+  const pnames = [...yAll.matchAll(/^  - \{name: "([^"]+)"/gm)].map((m) => m[1]);
+  const vgNames = [...yAll.matchAll(/^  - name: (VG-[^\n]+)\n    type: openvpn/gm)].map((m) => m[1]);
+  const enames = [...yAll.matchAll(/^  - name: "?([^"\n]+)"?\n    type: /gm)].map((m) => m[1]);
+  const definedAll = new Set([...gsAll, ...pnames, ...vgNames, ...enames, "DIRECT", "REJECT"]);
+  const danglingAll = [...new Set(refs.filter((r) => !definedAll.has(r)))];
+  t(`含 VPN Gate 时无悬空引用${danglingAll.length ? " (" + danglingAll.slice(0, 3) + ")" : ""}`, danglingAll.length === 0);
+}
+
 console.log(`\n通过 ${pass} 失败 ${fail}`);
 if (fail) process.exit(1);
+
 

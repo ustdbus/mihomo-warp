@@ -12,6 +12,7 @@ import { fetchOpera } from "./opera.js";
 import { buildConfig, parseCustomEndpoints } from "./config.js";
 import { parseBlob } from "./proton.js";
 import { fetchWindscribe, fetchSession } from "./windscribe.js";
+import { fetchVpnGate } from "./vpngate.js";
 import { renderUI, renderLogin, renderSetup, renderNoKV } from "./ui.js";
 import {
   safeEqual, makeCred, checkPassword, signToken, verifyToken,
@@ -27,6 +28,7 @@ const K_CLAIM = "auth:claim";     // 初始化时的抢占标记
 const K_PROTON = "proton:cred";   // Proton 凭据（由流水线推送）
 const K_PUSH = "proton:token";    // 流水线的写入令牌
 const K_WIND = "wind:account";    // Windscribe 账号，长期复用
+const K_VPNGATE = "vpngate:nodes";// VPN Gate 优质节点缓存
 const K_LOCK = "rebuild:lock";    // 重建锁，防并发重复注册
 const K_CUSTOM_WG = "custom:endpoints_wg"; // 自选 WireGuard 优选 IP
 const K_CUSTOM_MS = "custom:endpoints_ms"; // 自选 MASQUE 优选 IP
@@ -62,8 +64,10 @@ async function getSettings(env) {
     enableProton: s.enableProton ?? true,
     enableWarpDirect: s.enableWarpDirect ?? true,
     enableWind: s.enableWind ?? true,
+    enableVpnGate: s.enableVpnGate ?? true,
     protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null,
     protonServers: Array.isArray(s.protonServers) ? s.protonServers : null,
+    vpngateRegions: Array.isArray(s.vpngateRegions) ? s.vpngateRegions : ["日本", "韩国"],
   };
 }
 
@@ -84,6 +88,26 @@ async function getWind(env) {
   const acc = await env.KV.get(K_WIND, "json");
   if (!acc || !acc.sessionAuthHash) return null;
   return await fetchWindscribe(acc);
+}
+
+/** 获取并缓存 VPN Gate 节点 (缓存 3 小时有效，避免频繁爬取) */
+async function getVpnGate(env, force = false) {
+  if (!force) {
+    const cached = await env.KV.get(K_VPNGATE, "json");
+    if (cached && cached.servers && cached.servers.length) {
+      const age = Date.now() - new Date(cached.fetchedAt || 0).getTime();
+      if (age < 3 * 3600 * 1000) return cached;
+    }
+  }
+  try {
+    const vg = await fetchVpnGate();
+    await env.KV.put(K_VPNGATE, JSON.stringify(vg));
+    return vg;
+  } catch (e) {
+    const cached = await env.KV.get(K_VPNGATE, "json");
+    if (cached && cached.servers) return cached;
+    throw e;
+  }
 }
 
 /** 重建配置。*/
@@ -119,21 +143,32 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
     }
   }
 
+  let vpngate = null, vpngateErr = null;
+  if (settings.enableVpnGate !== false) {
+    try {
+      vpngate = await getVpnGate(env);
+    } catch (e) {
+      vpngateErr = e.message;
+    }
+  }
+
   const rawWg = await env.KV.get(K_CUSTOM_WG);
   const rawMs = await env.KV.get(K_CUSTOM_MS);
   const customWgEndpoints = rawWg ? parseCustomEndpoints(rawWg, "AWG") : null;
   const customMsEndpoints = rawMs ? parseCustomEndpoints(rawMs, "MASQUE") : null;
 
-  const cfg = buildConfig(warp, opera, proton, wind, {
+  const cfg = buildConfig(warp, opera, proton, wind, vpngate, {
     protocolMode,
     enableOpera: settings.enableOpera !== false,
     enableProton: settings.enableProton !== false,
     enableWarpDirect: settings.enableWarpDirect !== false,
     enableWind: settings.enableWind !== false,
+    enableVpnGate: settings.enableVpnGate !== false,
     customWgEndpoints,
     customMsEndpoints,
     protonRegions: settings.protonRegions,
     protonServers: settings.protonServers,
+    vpngateRegions: settings.vpngateRegions,
   });
 
   const now = Date.now();
@@ -146,12 +181,16 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
+      enableVpnGate: settings.enableVpnGate !== false,
       protonRegions: Array.isArray(settings.protonRegions)
         ? settings.protonRegions
         : ["日本", "新加坡"],
       protonServers: Array.isArray(settings.protonServers)
         ? settings.protonServers
         : null,
+      vpngateRegions: Array.isArray(settings.vpngateRegions)
+        ? settings.vpngateRegions
+        : ["日本", "韩国"],
     },
     stats: {
       entries: cfg.entries,
@@ -160,14 +199,18 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       landings: cfg.landings,
       protonServers: cfg.protonServers || (proton?.servers?.length || 0),
       windServers: cfg.windServers || (wind?.servers?.length || 0),
+      vpngateServers: cfg.vpngateServers || (vpngate?.servers?.length || 0),
       combos: cfg.totalCombos ?? cfg.combos,
       operaCombos: cfg.combos,
       proton: cfg.proton || 0,
       wind: cfg.wind || 0,
+      vpngate: cfg.vpngate || 0,
     },
     protonExpiresAt: proton ? proton.expiresAt : null,
     wind: wind ? { userId: wind.account.userId, servers: cfg.wind || 0 } : null,
     windErr,
+    vpngate: vpngate ? { servers: cfg.vpngateServers || 0, fetchedAt: vpngate.fetchedAt, regions: vpngate.regions } : null,
+    vpngateErr,
     warp: {
       protocol: warp.protocol || protocolMode,
       deviceId: warp.deviceId,
@@ -386,13 +429,14 @@ export default {
       const token = await signToken(cred);
       const pushToken = await env.KV.get(K_PUSH);
       const protonCred = await env.KV.get(K_PROTON, "json");
+      const vpngate = await env.KV.get(K_VPNGATE, "json");
       let windUsage = null;
       const wa = await env.KV.get(K_WIND, "json");
       if (wa && wa.sessionAuthHash) {
         try { windUsage = await fetchSession(wa); } catch { windUsage = null; }
       }
       return html(renderUI(state, url.host, subPath, token, cred,
-                           pushToken, protonCred, windUsage, settings));
+                           pushToken, protonCred, windUsage, settings, vpngate));
     }
 
     // 以下均需要认证
@@ -412,6 +456,7 @@ export default {
         enableProton: body.enableProton !== undefined ? Boolean(body.enableProton) : cur.enableProton,
         enableWarpDirect: body.enableWarpDirect !== undefined ? Boolean(body.enableWarpDirect) : cur.enableWarpDirect,
         enableWind: body.enableWind !== undefined ? Boolean(body.enableWind) : cur.enableWind,
+        enableVpnGate: body.enableVpnGate !== undefined ? Boolean(body.enableVpnGate) : cur.enableVpnGate,
       };
       await env.KV.put(K_SET, JSON.stringify(updated));
       try {
@@ -441,6 +486,39 @@ export default {
           msg: `Proton 落地设置已保存（启用 ${s.stats.protonServers || 0} 台服务器），已实时重构订阅`,
           stats: s.stats,
         });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+
+    // 保存 VPN Gate 落地选中的国家/地区 (无需选单IP，不限制连接数)
+    if (path === "/api/settings/vpngate-regions" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const regions = Array.isArray(body.regions) ? body.regions : [];
+      const cur = await getSettings(env);
+      const updated = {
+        ...cur,
+        vpngateRegions: regions,
+      };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({
+          ok: true,
+          msg: `VPN Gate 地区已保存（启用 ${s.stats.vpngateServers || 0} 台服务器），已实时重构订阅`,
+          stats: s.stats,
+        });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+
+    // 刷新 VPN Gate 节点
+    if (path === "/api/vpngate/refresh" && req.method === "POST") {
+      try {
+        await getVpnGate(env, true);
+        const s = await rebuild(env);
+        return json({ ok: true, msg: `VPN Gate 节点已重新拉取，已启用 ${s.stats.vpngateServers || 0} 台`, stats: s.stats });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }

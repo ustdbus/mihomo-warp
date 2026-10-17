@@ -714,6 +714,11 @@ var AI_DOMAINS = [
 ];
 var q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 var p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
+var indentBlock = (text, n = 6) => {
+  if (!text) return "";
+  const pad = " ".repeat(n);
+  return text.split(/\r?\n/).map((l) => pad + l.trim()).join("\n");
+};
 function buildRules(directIps = []) {
   const prov = [], rules = [];
   const uniqueIps = [...new Set(directIps.filter(Boolean))];
@@ -920,16 +925,38 @@ var REGION_ORDER = [
   "\u7F57\u9A6C\u5C3C\u4E9A",
   "\u58A8\u897F\u54E5"
 ];
-function buildConfig(warp, opera, proton, wind, options = {}) {
+function buildConfig(warp, opera, proton, wind, arg5 = {}, arg6 = {}) {
+  let vpngate = null;
+  let options = {};
+  const isVpnGate = (obj) => Boolean(obj && (Array.isArray(obj.servers) || obj.regions));
+  if (isVpnGate(arg5)) {
+    vpngate = arg5;
+    options = arg6 || {};
+  } else if (isVpnGate(arg6)) {
+    vpngate = arg6;
+    options = arg5 || {};
+  } else if (arg5 && (arg5.protocolMode !== void 0 || arg5.enableOpera !== void 0 || arg5.enableVpnGate !== void 0 || arg5.vpngateRegions !== void 0)) {
+    options = arg5;
+    if (arg5.vpngate) vpngate = arg5.vpngate;
+    if (arg6 && arg6.vpngate) vpngate = arg6.vpngate;
+  } else {
+    options = arg5 || {};
+    if (arg6 && typeof arg6 === "object") {
+      options = { ...options, ...arg6 };
+    }
+    if (options.vpngate) vpngate = options.vpngate;
+  }
   const protocolMode = options.protocolMode === "wg" ? "wg" : options.protocolMode === "masque" ? "masque" : options.protocolMode ? options.protocolMode : "masque";
   const enableOpera = options.enableOpera !== false;
   const enableProton = options.enableProton !== false;
   const enableWarpDirect = options.enableWarpDirect !== false;
   const enableWind = options.enableWind !== false;
+  const enableVpnGate = options.enableVpnGate !== false;
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
   const protonRegions = options.protonRegions || null;
   const protonServers = options.protonServers || null;
+  const vpngateRegions = Array.isArray(options.vpngateRegions) ? options.vpngateRegions : ["\u65E5\u672C", "\u97E9\u56FD"];
   let entries = [];
   let proxies = [];
   let v4Entries = [];
@@ -1066,11 +1093,60 @@ ${p(names)}`
     lazy: true
     proxies:
 ${q(names)}`).join("\n\n");
+  const vgNames = [];
+  const vgByCountry = {};
+  const targetVgServers = [];
+  if (enableVpnGate && vpngate && Array.isArray(vpngate.servers)) {
+    const selectedRegions = new Set(vpngateRegions);
+    for (const s of vpngate.servers) {
+      if (selectedRegions.has(s.country) || selectedRegions.has(s.cc)) {
+        targetVgServers.push(s);
+      }
+    }
+  }
+  if (targetVgServers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    if (dialerList.length) {
+      for (const srv of targetVgServers) {
+        if (srv.ip) directIps.push(srv.ip);
+        for (const ent of dialerList) {
+          const name = `${srv.name}@${ent}`;
+          vgNames.push(name);
+          (vgByCountry[srv.country] = vgByCountry[srv.country] || []).push(name);
+          proxies.push(`  - name: "${name}"
+    type: openvpn
+    server: ${srv.ip}
+    port: ${srv.port}
+    proto: ${srv.proto}
+    username: vpn
+    password: vpn
+    cipher: ${srv.cipher || "AES-128-CBC"}
+    auth: ${srv.auth || "SHA1"}
+    udp: ${srv.proto === "udp"}
+    dialer-proxy: ${ent}
+    ca: |
+${indentBlock(srv.ca, 6)}
+    cert: |
+${indentBlock(srv.cert, 6)}
+    key: |
+${indentBlock(srv.key, 6)}`);
+        }
+      }
+    }
+  }
+  const vgCCNames = Object.keys(vgByCountry).map((c) => `VPNGate-${c}`);
+  const vgCCDefs = Object.entries(vgByCountry).map(
+    ([cc, names]) => `  - name: VPNGate-${cc}
+    type: select
+    proxies:
+${p(names)}`
+  ).join("\n\n");
   const leafProxies = [];
   for (const tags of Object.values(byLoc)) {
     leafProxies.push(...tags);
   }
   if (windNames.length) leafProxies.push(...windNames);
+  if (vgNames.length) leafProxies.push(...vgNames);
   if (enableWarpDirect) leafProxies.push(...entries);
   if (leafProxies.length === 0) leafProxies.push(...entries);
   const picks = [];
@@ -1078,6 +1154,7 @@ ${q(names)}`).join("\n\n");
   if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
   if (protonNames.length) picks.push(...protonCCNames);
   if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
+  if (vgNames.length) picks.push(...vgCCNames);
   const { prov, rules } = buildRules(directIps);
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
 # \u7531 Cloudflare Worker \u751F\u6210\u4E8E ${(/* @__PURE__ */ new Date()).toISOString()}
@@ -1141,6 +1218,8 @@ ${p(windLocNames)}
 ${q(windNames)}
 
 ${windLocDefs}
+` : ""}${vgNames.length ? `
+${vgCCDefs}
 ` : ""}
 ${tailGroups(picks)}
 
@@ -1156,7 +1235,8 @@ ${rules}
   const operaCombos = combos;
   const protonCombos = protonNames.length;
   const windCombos = windNames.length;
-  const totalCombos = operaCombos + protonCombos + windCombos;
+  const vpngateCombos = vgNames.length;
+  const totalCombos = operaCombos + protonCombos + windCombos + vpngateCombos;
   return {
     yaml,
     protocolMode,
@@ -1168,12 +1248,15 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
+    vpngate: vpngateCombos,
     protonServers: targetProtonServers.length,
     windServers: enableWind && wind?.servers ? wind.servers.length : 0,
+    vpngateServers: targetVgServers.length,
     enableOpera,
     enableProton,
     enableWarpDirect,
-    enableWind
+    enableWind,
+    enableVpnGate
   };
 }
 
@@ -1296,6 +1379,217 @@ async function fetchWindscribe(account) {
     fetchServers(account)
   ]);
   return { account, ...cred, servers };
+}
+
+// src/vpngate.js
+var VPNGATE_DIRECT = "https://www.vpngate.net/api/iphone/";
+var VPNGATE_MIRROR = "https://p.xy.kg/vpngate";
+var MIRROR_KEY = "8rhIFzFKRJMFAe-xP5OQPclDEvSjKlHo";
+var COUNTRY_FLAG_MAP = {
+  "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
+  "\u97E9\u56FD": "\u{1F1F0}\u{1F1F7}",
+  "\u7F8E\u56FD": "\u{1F1FA}\u{1F1F8}",
+  "\u65B0\u52A0\u5761": "\u{1F1F8}\u{1F1EC}",
+  "\u6CF0\u56FD": "\u{1F1F9}\u{1F1ED}",
+  "\u53F0\u6E7E": "\u{1F1F9}\u{1F1FC}",
+  "\u9999\u6E2F": "\u{1F1ED}\u{1F1F0}",
+  "\u82F1\u56FD": "\u{1F1EC}\u{1F1E7}",
+  "\u5FB7\u56FD": "\u{1F1E9}\u{1F1EA}",
+  "\u6CD5\u56FD": "\u{1F1EB}\u{1F1F7}",
+  "\u52A0\u62FF\u5927": "\u{1F1E8}\u{1F1E6}",
+  "\u6FB3\u5927\u5229\u4E9A": "\u{1F1E6}\u{1F1FA}",
+  "\u4FC4\u7F57\u65AF": "\u{1F1F7}\u{1F1FA}",
+  "\u8D8A\u5357": "\u{1F1FB}\u{1F1F3}",
+  "\u83F2\u5F8B\u5BBE": "\u{1F1F5}\u{1F1ED}",
+  "\u9A6C\u6765\u897F\u4E9A": "\u{1F1F2}\u{1F1FE}",
+  "\u5370\u5EA6": "\u{1F1EE}\u{1F1F3}"
+};
+var COUNTRY_NAME_MAP = {
+  JP: "\u65E5\u672C",
+  KR: "\u97E9\u56FD",
+  US: "\u7F8E\u56FD",
+  SG: "\u65B0\u52A0\u5761",
+  TH: "\u6CF0\u56FD",
+  TW: "\u53F0\u6E7E",
+  HK: "\u9999\u6E2F",
+  GB: "\u82F1\u56FD",
+  DE: "\u5FB7\u56FD",
+  FR: "\u6CD5\u56FD",
+  CA: "\u52A0\u62FF\u5927",
+  AU: "\u6FB3\u5927\u5229\u4E9A",
+  RU: "\u4FC4\u7F57\u65AF",
+  VN: "\u8D8A\u5357",
+  PH: "\u83F2\u5F8B\u5BBE",
+  MY: "\u9A6C\u6765\u897F\u4E9A",
+  ID: "\u5370\u5C3C",
+  IN: "\u5370\u5EA6"
+};
+function parseVpnGateCSV(csvText) {
+  const lines = csvText.split(/\r?\n/).filter((l) => {
+    const t = l.trim();
+    return t && !t.startsWith("*");
+  });
+  if (lines.length < 2) {
+    throw new Error("VPN Gate \u6570\u636E\u884C\u4E0D\u8DB3");
+  }
+  const header = lines[0].replace(/^#/, "").split(",").map((s) => s.trim());
+  const idxB64 = header.indexOf("OpenVPN_ConfigData_Base64");
+  const idxCountry = header.indexOf("CountryLong");
+  const idxCC = header.indexOf("CountryShort");
+  const idxIP = header.indexOf("IP");
+  const idxSpeed = header.indexOf("Speed");
+  const idxPing = header.indexOf("Ping");
+  const idxHost = header.indexOf("HostName");
+  if (idxB64 === -1 || idxIP === -1) {
+    throw new Error("VPN Gate \u6570\u636E\u7F3A\u5C11\u5FC5\u8981\u5B57\u6BB5");
+  }
+  const nodes = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i];
+    if (!row || !row.includes(",")) continue;
+    const parts = row.split(",");
+    if (parts.length <= idxB64) continue;
+    const b643 = parts[idxB64]?.trim();
+    const ip = parts[idxIP]?.trim();
+    if (!b643 || !ip) continue;
+    let ovpn;
+    try {
+      ovpn = atob(b643);
+    } catch {
+      continue;
+    }
+    const remoteMatch = ovpn.match(/^remote\s+(\S+)\s+(\d+)/m);
+    const protoMatch = ovpn.match(/^proto\s+(\S+)/m);
+    const cipherMatch = ovpn.match(/^cipher\s+(\S+)/m);
+    const authMatch = ovpn.match(/^auth\s+(\S+)/m);
+    const caMatch = ovpn.match(/<ca>([\s\S]*?)<\/ca>/);
+    const certMatch = ovpn.match(/<cert>([\s\S]*?)<\/cert>/);
+    const keyMatch = ovpn.match(/<key>([\s\S]*?)<\/key>/);
+    if (!caMatch || !certMatch || !keyMatch) continue;
+    const port = remoteMatch ? parseInt(remoteMatch[2], 10) : 443;
+    const proto = (protoMatch ? protoMatch[1].toLowerCase() : "udp").startsWith("tcp") ? "tcp" : "udp";
+    const cipher = cipherMatch ? cipherMatch[1].trim() : "AES-128-CBC";
+    const auth = authMatch ? authMatch[1].trim() : "SHA1";
+    const cc = (parts[idxCC] || "").trim().toUpperCase();
+    const countryLong = (parts[idxCountry] || "").trim();
+    const countryZh = COUNTRY_NAME_MAP[cc] || countryLong || "\u5176\u4ED6";
+    const speed = parseInt(parts[idxSpeed] || "0", 10);
+    const ping = parseInt(parts[idxPing] || "0", 10);
+    const host = (parts[idxHost] || "").trim();
+    nodes.push({
+      host,
+      ip,
+      port,
+      proto,
+      cc,
+      country: countryZh,
+      countryZh,
+      countryRaw: countryLong,
+      speed,
+      ping,
+      cipher,
+      auth,
+      ca: caMatch[1].trim(),
+      cert: certMatch[1].trim(),
+      key: keyMatch[1].trim()
+    });
+  }
+  nodes.sort((a, b) => b.speed - a.speed);
+  return nodes;
+}
+async function fetchVpnGate() {
+  let csvText = null;
+  let lastErr = null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4500);
+    const res = await fetch(VPNGATE_DIRECT, {
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      }
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes("OpenVPN_ConfigData_Base64")) {
+        csvText = text;
+      }
+    }
+  } catch (e) {
+    lastErr = e;
+  }
+  if (!csvText) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6e3);
+      const res = await fetch(VPNGATE_MIRROR, {
+        signal: ctrl.signal,
+        headers: {
+          "X-Fanout-Key": MIRROR_KEY,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const text = await res.text();
+        if (text.includes("OpenVPN_ConfigData_Base64")) {
+          csvText = text;
+        }
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!csvText) {
+    throw new Error("\u62C9\u53D6 VPN Gate \u5217\u8868\u5931\u8D25: " + (lastErr ? lastErr.message : "\u672A\u77E5\u9519\u8BEF"));
+  }
+  const allNodes = parseVpnGateCSV(csvText);
+  if (!allNodes.length) {
+    throw new Error("VPN Gate \u5217\u8868\u65E0\u53EF\u7528\u6709\u6548\u8282\u70B9");
+  }
+  const byCountry = {};
+  for (const n of allNodes) {
+    const reg = n.country;
+    byCountry[reg] = byCountry[reg] || [];
+    if (byCountry[reg].length < 3) {
+      byCountry[reg].push(n);
+    }
+  }
+  const servers = [];
+  const regionsSummary = {};
+  for (const [reg, list] of Object.entries(byCountry)) {
+    regionsSummary[reg] = {
+      country: reg,
+      cc: list[0]?.cc || "",
+      flag: COUNTRY_FLAG_MAP[reg] || "\u{1F310}",
+      count: list.length,
+      maxSpeedMbps: +(list[0]?.speed / 1e6 || 0).toFixed(1)
+    };
+    list.forEach((n, idx) => {
+      servers.push({
+        name: `VG-${reg}${idx + 1}`,
+        country: reg,
+        cc: n.cc,
+        ip: n.ip,
+        port: n.port,
+        proto: n.proto,
+        speedMbps: +(n.speed / 1e6).toFixed(1),
+        ping: n.ping,
+        cipher: n.cipher,
+        auth: n.auth,
+        ca: n.ca,
+        cert: n.cert,
+        key: n.key
+      });
+    });
+  }
+  return {
+    servers,
+    regions: regionsSummary,
+    totalParsed: allNodes.length,
+    fetchedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
 }
 
 // src/ui.js
@@ -1539,7 +1833,7 @@ async function go(e){
 <\/script>
 </body></html>`;
 }
-function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage, settings = {}) {
+function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage, settings = {}, vpngate = null) {
   const s = state || {};
   const warp = s.warp || {};
   const stat = s.stats || {};
@@ -1548,6 +1842,9 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
   const enableProton = settings.enableProton ?? true;
   const enableWarpDirect = settings.enableWarpDirect ?? true;
   const enableWind = settings.enableWind ?? true;
+  const enableVpnGate = settings.enableVpnGate ?? true;
+  const currentVgRegions = Array.isArray(settings?.vpngateRegions) ? settings.vpngateRegions : Array.isArray(s.features?.vpngateRegions) ? s.features.vpngateRegions : ["\u65E5\u672C", "\u97E9\u56FD"];
+  const activeVgRegions = new Set(currentVgRegions);
   const updated = s.updatedAt ? new Date(s.updatedAt) : null;
   const ago = updated ? Math.floor((Date.now() - updated.getTime()) / 6e4) : null;
   const exp = s.expiresAt ? new Date(s.expiresAt) : null;
@@ -1723,13 +2020,14 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       </div>
       <div style="height:12px"></div>
       <div class="sec-t">\u843D\u5730\u670D\u52A1</div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         <div class="cell"><div class="n">${!enableOpera ? "\u5DF2\u5173\u95ED" : stat.landings ? `${stat.landings} \u53F0` : "\u2014"}</div><div class="l">Opera \u843D\u5730</div></div>
         <div class="cell"><div class="n">${!enableProton ? "\u5DF2\u5173\u95ED" : stat.protonServers || protonCred && protonCred.servers && protonCred.servers.length ? `${stat.protonServers || protonCred.servers.length} \u53F0` : "\u2014"}</div><div class="l">Proton \u843D\u5730</div></div>
         <div class="cell"><div class="n">${!enableWind ? "\u5DF2\u5173\u95ED" : stat.windServers ? `${stat.windServers} \u53F0` : windInfo && windInfo.servers ? `${windInfo.servers} \u53F0` : "\u2014"}</div><div class="l">Windscribe \u843D\u5730</div></div>
+        <div class="cell"><div class="n">${!enableVpnGate ? "\u5DF2\u5173\u95ED" : stat.vpngateServers ? `${stat.vpngateServers} \u53F0` : vpngate?.servers ? `${vpngate.servers.length} \u53F0` : "\u2014"}</div><div class="l">VPN Gate \u843D\u5730</div></div>
       </div>
       <div class="note">
-        \u6BCF\u4E2A\u5F00\u542F\u7684\u843D\u5730\u548C\u524D\u7F6E\u63A5\u5165\u70B9\u8FDB\u884C\u7B1B\u5361\u5C14\u79EF\u7EC4\u5408\uFF0C\u4EFB\u4E00\u8DEF\u5F84\u6545\u969C\u90FD\u6709\u5197\u4F59\u8282\u70B9\u515C\u5E95\u3002
+        \u6BCF\u4E2A\u5F00\u542F\u7684\u843D\u5730\u548C\u524D\u7F6E\u63A5\u5165\u70B9\u8FDB\u884C\u5957\u5A03\u62E8\u53F7\u7EC4\u5408\uFF0C\u4EFB\u4E00\u8DEF\u5F84\u6545\u969C\u90FD\u6709\u5197\u4F59\u8282\u70B9\u515C\u5E95\u3002
       </div>
     </div>
 
@@ -1738,7 +2036,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="switch-grid">
         <label class="switch-item">
           <input type="checkbox" id="sw_opera" ${enableOpera ? "checked" : ""}>
-          <span>Opera \u843D\u5730 (\u5173\u95ED\u540E\u505C\u6B62\u8BF7\u6C42\u51ED\u8BC1)</span>
+          <span>Opera \u843D\u5730</span>
         </label>
         <label class="switch-item">
           <input type="checkbox" id="sw_proton" ${enableProton ? "checked" : ""}>
@@ -1751,6 +2049,10 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
         <label class="switch-item">
           <input type="checkbox" id="sw_wind" ${enableWind ? "checked" : ""}>
           <span>Windscribe \u843D\u5730</span>
+        </label>
+        <label class="switch-item">
+          <input type="checkbox" id="sw_vpngate" ${enableVpnGate ? "checked" : ""}>
+          <span>VPN Gate \u843D\u5730 (\u7B51\u6CE2\u5927\u5B66\u5B66\u672F)</span>
         </label>
       </div>
       <div class="sub">
@@ -1893,6 +2195,53 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     </div>
 
     <div class="sec">
+      <div class="sec-t">VPN Gate \u843D\u5730 (\u5F00\u6E90\u5B66\u672F)</div>
+      ${vpngate ? `
+      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5728\u7EBF\uFF08\u6293\u53D6\u5230 ${vpngate.totalParsed || vpngate.servers?.length || 0} \u53F0\u8282\u70B9\uFF0C\u7CBE\u9009\u8986\u76D6 ${Object.keys(vpngate.regions || {}).length} \u4E2A\u56FD\u5BB6/\u5730\u533A\uFF09</span></div>
+      <div class="row"><span class="k">\u6293\u53D6\u65F6\u95F4</span><span class="v">${vpngate.fetchedAt ? fmt(new Date(vpngate.fetchedAt)) : "\u2014"}</span></div>
+      <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleVgListExpand(event)">
+        <span class="k" style="display:flex;align-items:center;gap:8px">
+          <span>VPN Gate \u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u81EA\u7531\u591A\u9009\uFF0C\u4E0D\u9650\u8FDE\u63A5\u6570\uFF09</span>
+          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">\u6536\u8D77\u5217\u8868 \u25B2</span>
+        </span>
+        <span class="v ok" id="vg_summary">\u5DF2\u52FE\u9009 ${activeVgRegions.size} \u4E2A\u56FD\u5BB6</span>
+      </div>
+      <div id="vg_regions_wrapper">
+        <div class="switch-grid" style="margin:10px 0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+          ${Object.values(vpngate.regions || {}).map((item) => {
+    const checked = currentVgRegions.includes(item.country);
+    return `
+            <label class="switch-item" style="cursor:pointer">
+              <input type="checkbox" name="vpngate_region" value="${item.country}" ${checked ? "checked" : ""} onchange="updateVgStats()">
+              <span style="display:flex;align-items:center;gap:6px;width:100%">
+                <span>${item.flag} ${item.country}</span>
+                <span style="font-size:10px;color:var(--dim);margin-left:auto">${item.count}\u53F0 (${item.maxSpeedMbps}M)</span>
+              </span>
+            </label>`;
+  }).join("")}
+        </div>
+        <div class="sub" style="margin-bottom:12px">
+          <button onclick="saveVpnGateRegions()">\u5E94\u7528\u6240\u9009 VPN Gate \u5730\u533A</button>
+          <button class="gh" type="button" onclick="selectVgAsia()">\u4EC5\u65E5\u97E9\u4E9A\u592A</button>
+          <button class="gh" type="button" onclick="toggleVgAll(true)">\u5168\u9009</button>
+          <button class="gh" type="button" onclick="toggleVgAll(false)">\u6E05\u7A7A</button>
+        </div>
+      </div>
+      <div class="sub">
+        <button class="gh" onclick="go('/api/vpngate/refresh')">\u91CD\u65B0\u6293\u53D6\u8282\u70B9</button>
+      </div>
+      ` : `
+      <div class="row"><span class="k">\u72B6\u6001</span><span class="v warn">\u5C1A\u672A\u83B7\u53D6\u8282\u70B9</span></div>
+      <div class="sub">
+        <button onclick="go('/api/vpngate/refresh')">\u7ACB\u5373\u6293\u53D6 VPN Gate \u8282\u70B9</button>
+      </div>
+      `}
+      <div class="note" style="margin-top:10px">
+        VPN Gate \u7531\u65E5\u672C\u7B51\u6CE2\u5927\u5B66\u53D1\u8D77\uFF0C\u5168\u7403\u5FD7\u613F\u8005\u63D0\u4F9B\u670D\u52A1\u3002OpenVPN \u534F\u8BAE over WARP\uFF0C\u65E0\u9700\u5355\u9009 IP\uFF0C\u76F4\u63A5\u52FE\u9009\u56FD\u5BB6\u5373\u53EF\u7545\u8054\u3002
+      </div>
+    </div>
+
+    <div class="sec">
       <div class="sec-t">\u72B6\u6001</div>
       ${row(
     "\u4E0A\u6B21\u66F4\u65B0",
@@ -1963,9 +2312,53 @@ function saveFeatures(){
     enableProton: document.getElementById('sw_proton').checked,
     enableWarpDirect: document.getElementById('sw_warp').checked,
     enableWind: document.getElementById('sw_wind').checked,
+    enableVpnGate: document.getElementById('sw_vpngate').checked,
   };
   post('/api/settings/features', body, '\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA');
 }
+
+function toggleVgListExpand(e){
+  if(e && e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+  const wrap = document.getElementById('vg_regions_wrapper');
+  const btn = document.getElementById('btn_toggle_vg_list');
+  if(!wrap) return;
+  const isHidden = (wrap.style.display === 'none');
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if(btn) btn.textContent = isHidden ? '\u6536\u8D77\u5217\u8868 \u25B2' : '\u5C55\u5F00\u5217\u8868 \u25BC';
+}
+
+function updateVgStats(){
+  const boxes = document.querySelectorAll('input[name="vpngate_region"]:checked');
+  const summary = document.getElementById('vg_summary');
+  if(summary){
+    summary.textContent = '\u5DF2\u52FE\u9009 ' + boxes.length + ' \u4E2A\u56FD\u5BB6';
+  }
+}
+
+function saveVpnGateRegions(){
+  const boxes = document.querySelectorAll('input[name="vpngate_region"]:checked');
+  const regions = Array.from(boxes).map(b => b.value);
+  if(regions.length === 0){
+    if(!confirm("\u672A\u52FE\u9009\u4EFB\u4F55 VPN Gate \u56FD\u5BB6\uFF0C\u786E\u5B9A\u4FDD\u5B58\u5417\uFF1F(\u672A\u52FE\u9009\u5C06\u4E0D\u751F\u6210 VPN Gate \u843D\u5730\u8282\u70B9)")) return;
+  }
+  post('/api/settings/vpngate-regions', { regions: regions }, 'VPN Gate \u843D\u5730\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\u5E76\u91CD\u6784\u914D\u7F6E');
+}
+
+function selectVgAsia(){
+  const asiaList = ["\u65E5\u672C", "\u97E9\u56FD", "\u53F0\u6E7E", "\u9999\u6E2F", "\u65B0\u52A0\u5761", "\u6CF0\u56FD", "\u8D8A\u5357", "\u9A6C\u6765\u897F\u4E9A", "\u5370\u5EA6\u5C3C\u897F\u4E9A", "\u83F2\u5F8B\u5BBE"];
+  document.querySelectorAll('input[name="vpngate_region"]').forEach(b => {
+    b.checked = asiaList.includes(b.value);
+  });
+  updateVgStats();
+}
+
+function toggleVgAll(checked){
+  document.querySelectorAll('input[name="vpngate_region"]').forEach(b => {
+    b.checked = checked;
+  });
+  updateVgStats();
+}
+
 function toggleRegionExpand(reg, e){
   if(e) e.stopPropagation();
   const d = document.getElementById('drawer_' + reg);
@@ -2227,6 +2620,7 @@ var K_CLAIM = "auth:claim";
 var K_PROTON = "proton:cred";
 var K_PUSH = "proton:token";
 var K_WIND = "wind:account";
+var K_VPNGATE = "vpngate:nodes";
 var K_LOCK = "rebuild:lock";
 var K_CUSTOM_WG = "custom:endpoints_wg";
 var K_CUSTOM_MS = "custom:endpoints_ms";
@@ -2255,8 +2649,10 @@ async function getSettings(env) {
     enableProton: s.enableProton ?? true,
     enableWarpDirect: s.enableWarpDirect ?? true,
     enableWind: s.enableWind ?? true,
+    enableVpnGate: s.enableVpnGate ?? true,
     protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null,
-    protonServers: Array.isArray(s.protonServers) ? s.protonServers : null
+    protonServers: Array.isArray(s.protonServers) ? s.protonServers : null,
+    vpngateRegions: Array.isArray(s.vpngateRegions) ? s.vpngateRegions : ["\u65E5\u672C", "\u97E9\u56FD"]
   };
 }
 async function getWarp(env, force = false, protocol = "wg") {
@@ -2274,6 +2670,24 @@ async function getWind(env) {
   const acc = await env.KV.get(K_WIND, "json");
   if (!acc || !acc.sessionAuthHash) return null;
   return await fetchWindscribe(acc);
+}
+async function getVpnGate(env, force = false) {
+  if (!force) {
+    const cached = await env.KV.get(K_VPNGATE, "json");
+    if (cached && cached.servers && cached.servers.length) {
+      const age = Date.now() - new Date(cached.fetchedAt || 0).getTime();
+      if (age < 3 * 3600 * 1e3) return cached;
+    }
+  }
+  try {
+    const vg = await fetchVpnGate();
+    await env.KV.put(K_VPNGATE, JSON.stringify(vg));
+    return vg;
+  } catch (e) {
+    const cached = await env.KV.get(K_VPNGATE, "json");
+    if (cached && cached.servers) return cached;
+    throw e;
+  }
 }
 async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
   let settings = await getSettings(env);
@@ -2301,20 +2715,30 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       windErr = e.message;
     }
   }
+  let vpngate = null, vpngateErr = null;
+  if (settings.enableVpnGate !== false) {
+    try {
+      vpngate = await getVpnGate(env);
+    } catch (e) {
+      vpngateErr = e.message;
+    }
+  }
   const rawWg = await env.KV.get(K_CUSTOM_WG);
   const rawMs = await env.KV.get(K_CUSTOM_MS);
   const customWgEndpoints = rawWg ? parseCustomEndpoints(rawWg, "AWG") : null;
   const customMsEndpoints = rawMs ? parseCustomEndpoints(rawMs, "MASQUE") : null;
-  const cfg = buildConfig(warp, opera, proton, wind, {
+  const cfg = buildConfig(warp, opera, proton, wind, vpngate, {
     protocolMode,
     enableOpera: settings.enableOpera !== false,
     enableProton: settings.enableProton !== false,
     enableWarpDirect: settings.enableWarpDirect !== false,
     enableWind: settings.enableWind !== false,
+    enableVpnGate: settings.enableVpnGate !== false,
     customWgEndpoints,
     customMsEndpoints,
     protonRegions: settings.protonRegions,
-    protonServers: settings.protonServers
+    protonServers: settings.protonServers,
+    vpngateRegions: settings.vpngateRegions
   });
   const now = Date.now();
   const state = {
@@ -2326,8 +2750,10 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
+      enableVpnGate: settings.enableVpnGate !== false,
       protonRegions: Array.isArray(settings.protonRegions) ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"],
-      protonServers: Array.isArray(settings.protonServers) ? settings.protonServers : null
+      protonServers: Array.isArray(settings.protonServers) ? settings.protonServers : null,
+      vpngateRegions: Array.isArray(settings.vpngateRegions) ? settings.vpngateRegions : ["\u65E5\u672C", "\u97E9\u56FD"]
     },
     stats: {
       entries: cfg.entries,
@@ -2336,14 +2762,18 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       landings: cfg.landings,
       protonServers: cfg.protonServers || (proton?.servers?.length || 0),
       windServers: cfg.windServers || (wind?.servers?.length || 0),
+      vpngateServers: cfg.vpngateServers || (vpngate?.servers?.length || 0),
       combos: cfg.totalCombos ?? cfg.combos,
       operaCombos: cfg.combos,
       proton: cfg.proton || 0,
-      wind: cfg.wind || 0
+      wind: cfg.wind || 0,
+      vpngate: cfg.vpngate || 0
     },
     protonExpiresAt: proton ? proton.expiresAt : null,
     wind: wind ? { userId: wind.account.userId, servers: cfg.wind || 0 } : null,
     windErr,
+    vpngate: vpngate ? { servers: cfg.vpngateServers || 0, fetchedAt: vpngate.fetchedAt, regions: vpngate.regions } : null,
+    vpngateErr,
     warp: {
       protocol: warp.protocol || protocolMode,
       deviceId: warp.deviceId,
@@ -2535,6 +2965,7 @@ var index_default = {
       const token = await signToken(cred);
       const pushToken = await env.KV.get(K_PUSH);
       const protonCred = await env.KV.get(K_PROTON, "json");
+      const vpngate = await env.KV.get(K_VPNGATE, "json");
       let windUsage = null;
       const wa = await env.KV.get(K_WIND, "json");
       if (wa && wa.sessionAuthHash) {
@@ -2553,7 +2984,8 @@ var index_default = {
         pushToken,
         protonCred,
         windUsage,
-        settings
+        settings,
+        vpngate
       ));
     }
     if (!authed) return notFound();
@@ -2568,7 +3000,8 @@ var index_default = {
         enableOpera: body.enableOpera !== void 0 ? Boolean(body.enableOpera) : cur.enableOpera,
         enableProton: body.enableProton !== void 0 ? Boolean(body.enableProton) : cur.enableProton,
         enableWarpDirect: body.enableWarpDirect !== void 0 ? Boolean(body.enableWarpDirect) : cur.enableWarpDirect,
-        enableWind: body.enableWind !== void 0 ? Boolean(body.enableWind) : cur.enableWind
+        enableWind: body.enableWind !== void 0 ? Boolean(body.enableWind) : cur.enableWind,
+        enableVpnGate: body.enableVpnGate !== void 0 ? Boolean(body.enableVpnGate) : cur.enableVpnGate
       };
       await env.KV.put(K_SET, JSON.stringify(updated));
       try {
@@ -2596,6 +3029,35 @@ var index_default = {
           msg: `Proton \u843D\u5730\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF08\u542F\u7528 ${s.stats.protonServers || 0} \u53F0\u670D\u52A1\u5668\uFF09\uFF0C\u5DF2\u5B9E\u65F6\u91CD\u6784\u8BA2\u9605`,
           stats: s.stats
         });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+    if (path === "/api/settings/vpngate-regions" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const regions = Array.isArray(body.regions) ? body.regions : [];
+      const cur = await getSettings(env);
+      const updated = {
+        ...cur,
+        vpngateRegions: regions
+      };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({
+          ok: true,
+          msg: `VPN Gate \u5730\u533A\u5DF2\u4FDD\u5B58\uFF08\u542F\u7528 ${s.stats.vpngateServers || 0} \u53F0\u670D\u52A1\u5668\uFF09\uFF0C\u5DF2\u5B9E\u65F6\u91CD\u6784\u8BA2\u9605`,
+          stats: s.stats
+        });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+    if (path === "/api/vpngate/refresh" && req.method === "POST") {
+      try {
+        await getVpnGate(env, true);
+        const s = await rebuild(env);
+        return json({ ok: true, msg: `VPN Gate \u8282\u70B9\u5DF2\u91CD\u65B0\u62C9\u53D6\uFF0C\u5DF2\u542F\u7528 ${s.stats.vpngateServers || 0} \u53F0`, stats: s.stats });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }

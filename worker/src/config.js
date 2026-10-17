@@ -227,6 +227,12 @@ const AI_DOMAINS = [
 const q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 const p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
 
+const indentBlock = (text, n = 6) => {
+  if (!text) return "";
+  const pad = " ".repeat(n);
+  return text.split(/\r?\n/).map((l) => pad + l.trim()).join("\n");
+};
+
 function buildRules(directIps = []) {
   const prov = [], rules = [];
 
@@ -430,16 +436,41 @@ export const REGION_ORDER = [
   "瑞士", "挪威", "波兰", "罗马尼亚", "墨西哥"
 ];
 
-export function buildConfig(warp, opera, proton, wind, options = {}) {
+export function buildConfig(warp, opera, proton, wind, arg5 = {}, arg6 = {}) {
+  let vpngate = null;
+  let options = {};
+
+  const isVpnGate = (obj) => Boolean(obj && (Array.isArray(obj.servers) || obj.regions));
+
+  if (isVpnGate(arg5)) {
+    vpngate = arg5;
+    options = arg6 || {};
+  } else if (isVpnGate(arg6)) {
+    vpngate = arg6;
+    options = arg5 || {};
+  } else if (arg5 && (arg5.protocolMode !== undefined || arg5.enableOpera !== undefined || arg5.enableVpnGate !== undefined || arg5.vpngateRegions !== undefined)) {
+    options = arg5;
+    if (arg5.vpngate) vpngate = arg5.vpngate;
+    if (arg6 && arg6.vpngate) vpngate = arg6.vpngate;
+  } else {
+    options = arg5 || {};
+    if (arg6 && typeof arg6 === "object") {
+      options = { ...options, ...arg6 };
+    }
+    if (options.vpngate) vpngate = options.vpngate;
+  }
+
   const protocolMode = options.protocolMode === "wg" ? "wg" : (options.protocolMode === "masque" ? "masque" : (options.protocolMode ? options.protocolMode : "masque"));
   const enableOpera = options.enableOpera !== false;
   const enableProton = options.enableProton !== false;
   const enableWarpDirect = options.enableWarpDirect !== false;
   const enableWind = options.enableWind !== false;
+  const enableVpnGate = options.enableVpnGate !== false;
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
   const protonRegions = options.protonRegions || null;
   const protonServers = options.protonServers || null;
+  const vpngateRegions = Array.isArray(options.vpngateRegions) ? options.vpngateRegions : ["日本", "韩国"];
 
   let entries = [];
   let proxies = [];
@@ -604,6 +635,61 @@ ${p(names)}`
     proxies:
 ${q(names)}`).join("\n\n");
 
+  // VPN Gate 落地 (OpenVPN，支持用户勾选国家/地区)
+  const vgNames = [];
+  const vgByCountry = {};
+  const targetVgServers = [];
+
+  if (enableVpnGate && vpngate && Array.isArray(vpngate.servers)) {
+    const selectedRegions = new Set(vpngateRegions);
+    for (const s of vpngate.servers) {
+      if (selectedRegions.has(s.country) || selectedRegions.has(s.cc)) {
+        targetVgServers.push(s);
+      }
+    }
+  }
+
+  if (targetVgServers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    if (dialerList.length) {
+      for (const srv of targetVgServers) {
+        if (srv.ip) directIps.push(srv.ip);
+        for (const ent of dialerList) {
+          const name = `${srv.name}@${ent}`;
+          vgNames.push(name);
+          (vgByCountry[srv.country] = vgByCountry[srv.country] || []).push(name);
+
+          proxies.push(`  - name: "${name}"
+    type: openvpn
+    server: ${srv.ip}
+    port: ${srv.port}
+    proto: ${srv.proto}
+    username: vpn
+    password: vpn
+    cipher: ${srv.cipher || "AES-128-CBC"}
+    auth: ${srv.auth || "SHA1"}
+    udp: ${srv.proto === "udp"}
+    dialer-proxy: ${ent}
+    ca: |
+${indentBlock(srv.ca, 6)}
+    cert: |
+${indentBlock(srv.cert, 6)}
+    key: |
+${indentBlock(srv.key, 6)}`);
+        }
+      }
+    }
+  }
+
+  // 策略组：跟 VPN Gate 相关的仅保留 VPNGate-国家/地区
+  const vgCCNames = Object.keys(vgByCountry).map((c) => `VPNGate-${c}`);
+  const vgCCDefs = Object.entries(vgByCountry).map(([cc, names]) =>
+    `  - name: VPNGate-${cc}
+    type: select
+    proxies:
+${p(names)}`
+  ).join("\n\n");
+
   // 整理叶子节点：供 ♻️ 自动选择 与 🔄 故障转移 使用（绝不包含策略组名）
   // 核心保护：Proton 官方免费凭据严格限制单设备会话，绝不塞进后台频繁轮询的自动测速组，防止客户端后台频繁踢线导致崩溃
   const leafProxies = [];
@@ -611,15 +697,17 @@ ${q(names)}`).join("\n\n");
     leafProxies.push(...tags);
   }
   if (windNames.length) leafProxies.push(...windNames);
+  if (vgNames.length) leafProxies.push(...vgNames);
   if (enableWarpDirect) leafProxies.push(...entries);
   if (leafProxies.length === 0) leafProxies.push(...entries);
 
-  // 整理 🚀 节点选择 包含的组与直连：Proton 相关仅保留 Proton-国家/地区
+  // 整理 🚀 节点选择 包含的组与直连：Proton 与 VPNGate 相关仅保留国家/地区策略组
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP直连");
   if (protonNames.length) picks.push(...protonCCNames);
   if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
+  if (vgNames.length) picks.push(...vgCCNames);
 
   const { prov, rules } = buildRules(directIps);
 
@@ -685,6 +773,8 @@ ${p(windLocNames)}
 ${q(windNames)}
 
 ${windLocDefs}
+` : ""}${vgNames.length ? `
+${vgCCDefs}
 ` : ""}
 ${tailGroups(picks)}
 
@@ -701,7 +791,8 @@ ${rules}
   const operaCombos = combos;
   const protonCombos = protonNames.length;
   const windCombos = windNames.length;
-  const totalCombos = operaCombos + protonCombos + windCombos;
+  const vpngateCombos = vgNames.length;
+  const totalCombos = operaCombos + protonCombos + windCombos + vpngateCombos;
 
   return {
     yaml,
@@ -714,11 +805,14 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
+    vpngate: vpngateCombos,
     protonServers: targetProtonServers.length,
     windServers: (enableWind && wind?.servers) ? wind.servers.length : 0,
+    vpngateServers: targetVgServers.length,
     enableOpera,
     enableProton,
     enableWarpDirect,
     enableWind,
+    enableVpnGate,
   };
 }
