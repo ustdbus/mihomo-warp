@@ -22,4 +22,5 @@ worker/*_test*
 worker/test_*
 worker/setup_mihomo.sh
 worker/*.py
+worker/*.yaml
 

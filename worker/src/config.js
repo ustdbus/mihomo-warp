@@ -102,8 +102,7 @@ function awgNode(name, ip, port, priv, pub, v4, v6, reserved, opt = {}) {
     reserved: ${resStr}
     udp: true
     mtu: 1280
-    remote-dns-resolve: true
-    dns: [1.1.1.1, 2606:4700:4700::1111]
+    dns: [223.5.5.5, 119.29.29.29]
     amnezia-wg-option:
       jc: ${opt.jc || 4}
       jmin: ${opt.jmin || 40}
@@ -138,7 +137,7 @@ export function parseCustomEndpoints(raw, prefix = "AWG") {
 }
 
 export function buildAwgEntries(warp, customEndpoints = null) {
-  if (!warp) return { awgEntries: [], awgProxies: [] };
+  if (!warp) return { awgEntries: [], awgProxies: [], awgIps: [] };
   const priv = warp.privateKey;
   const pub = warp.peerPublicKey || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
   const res = warp.reserved || [13, 86, 243];
@@ -151,11 +150,13 @@ export function buildAwgEntries(warp, customEndpoints = null) {
 
   const awgEntries = [];
   const awgProxies = [];
+  const awgIps = [];
   for (const ep of endpoints) {
     awgEntries.push(ep.tag);
+    awgIps.push(ep.ip);
     awgProxies.push(awgNode(ep.tag, ep.ip, ep.port, priv, pub, v4, v6, res));
   }
-  return { awgEntries, awgProxies };
+  return { awgEntries, awgProxies, awgIps };
 }
 
 /** 生成 MASQUE 接入点。若有自选端点则优先使用。 */
@@ -163,16 +164,19 @@ function buildEntries(warp, customMasqueEndpoints = null) {
   const { privateKey: priv, peerPublicKey: pub, ipv4: v4, ipv6: v6 } = warp;
   const entries = [], proxies = [];
   const v4Entries = [];
+  const ips = [];
 
   if (customMasqueEndpoints && customMasqueEndpoints.length > 0) {
     for (const ep of customMasqueEndpoints) {
       const n = ep.tag.startsWith("MASQUE-") ? ep.tag : `MASQUE-${ep.ip}:${ep.port}`;
       entries.push(n);
+      ips.push(ep.ip);
       if (!ep.ip.includes(":")) v4Entries.push(n);
       proxies.push(masqueNode(n, ep.ip, ep.port, priv, pub, v4, v6));
     }
   } else {
     for (const ip of [...V4, ...V6]) {
+      ips.push(ip);
       for (const port of PORTS) {
         const n = entryName(ip, port);
         entries.push(n);
@@ -183,9 +187,10 @@ function buildEntries(warp, customMasqueEndpoints = null) {
   }
   entries.push("官方域名");
   v4Entries.push("官方域名");
+  ips.push(SNI_NODE[0]);
   proxies.push(masqueNode("官方域名", SNI_NODE[0], SNI_NODE[1],
                           priv, pub, v4, v6, OFFICIAL_SNI));
-  return { entries, proxies, v4Entries };
+  return { entries, proxies, v4Entries, ips };
 }
 
 const AI_DOMAINS = [
@@ -223,8 +228,22 @@ const AI_DOMAINS = [
 const q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 const p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
 
-function buildRules() {
+function buildRules(directIps = []) {
   const prov = [], rules = [];
+
+  // 防环路核心：前置与落地节点物理 IP 强制直连，防止 TUN 模式无限死循环递归 (70MB/s 流量风暴)
+  const uniqueIps = [...new Set(directIps.filter(Boolean))];
+  for (const ip of uniqueIps) {
+    const cleanIp = ip.replace(/^\[|\]$/g, "").trim();
+    if (cleanIp) {
+      const cidr = cleanIp.includes(":") ? `${cleanIp}/128` : `${cleanIp}/32`;
+      rules.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
+    }
+  }
+
+  const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},🤖 AI服务`);
+  rules.push(...ai);
+
   RULESETS.forEach(([group, url], i) => {
     const pn = `rule${String(i).padStart(2, "0")}`;
     prov.push(`  ${pn}:
@@ -236,8 +255,8 @@ function buildRules() {
     path: ./ruleset/${pn}.list`);
     rules.push(`  - RULE-SET,${pn},${group}`);
   });
-  const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},🤖 AI服务`);
-  return { prov: prov.join("\n"), rules: [...ai, ...rules].join("\n") };
+
+  return { prov: prov.join("\n"), rules: rules.join("\n") };
 }
 
 function head(ipv6) {
@@ -362,8 +381,6 @@ ${p(picks)}
     type: select
     proxies:
       - DIRECT
-      - 🚀 节点选择
-      - ♻️ 自动选择
 
   - name: 🛑 全球拦截
     type: select
@@ -418,17 +435,20 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   let entries = [];
   let proxies = [];
   let v4Entries = [];
+  let directIps = [];
 
   if (protocolMode === "wg") {
-    const { awgEntries, awgProxies } = buildAwgEntries(warp, customWgEndpoints);
+    const { awgEntries, awgProxies, awgIps } = buildAwgEntries(warp, customWgEndpoints);
     entries = awgEntries;
     proxies = [...awgProxies];
     v4Entries = awgEntries;
+    directIps = [...awgIps];
   } else {
     const res = buildEntries(warp, customMsEndpoints);
     entries = res.entries;
     proxies = [...res.proxies];
     v4Entries = res.v4Entries;
+    directIps = [...(res.ips || [])];
   }
 
   // Opera 落地组合（笛卡尔积）
@@ -470,6 +490,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   }
 
   if (targetProtonServers.length) {
+    directIps.push(...targetProtonServers.map((s) => s.ip));
     const dialerList = protocolMode === "wg" ? entries : v4Entries;
     for (const srv of targetProtonServers) {
       protonByServer[srv.name] = [];
@@ -490,7 +511,8 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1280
+    mtu: 1120
+    keepalive: 25
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       }
@@ -591,7 +613,7 @@ ${q(names)}`).join("\n\n");
   if (protonNames.length) picks.push("Proton线路", ...protonCCNames, ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
 
-  const { prov, rules } = buildRules();
+  const { prov, rules } = buildRules(directIps);
 
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
 # 由 Cloudflare Worker 生成于 ${new Date().toISOString()}

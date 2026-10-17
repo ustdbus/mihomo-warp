@@ -524,8 +524,7 @@ function awgNode(name, ip, port, priv, pub, v4, v6, reserved, opt = {}) {
     reserved: ${resStr}
     udp: true
     mtu: 1280
-    remote-dns-resolve: true
-    dns: [1.1.1.1, 2606:4700:4700::1111]
+    dns: [223.5.5.5, 119.29.29.29]
     amnezia-wg-option:
       jc: ${opt.jc || 4}
       jmin: ${opt.jmin || 40}
@@ -558,7 +557,7 @@ function parseCustomEndpoints(raw, prefix = "AWG") {
   return result;
 }
 function buildAwgEntries(warp, customEndpoints = null) {
-  if (!warp) return { awgEntries: [], awgProxies: [] };
+  if (!warp) return { awgEntries: [], awgProxies: [], awgIps: [] };
   const priv = warp.privateKey;
   const pub = warp.peerPublicKey || "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
   const res = warp.reserved || [13, 86, 243];
@@ -567,25 +566,30 @@ function buildAwgEntries(warp, customEndpoints = null) {
   const endpoints = customEndpoints && customEndpoints.length > 0 ? customEndpoints : AWG_OPTIMIZED_ENDPOINTS;
   const awgEntries = [];
   const awgProxies = [];
+  const awgIps = [];
   for (const ep of endpoints) {
     awgEntries.push(ep.tag);
+    awgIps.push(ep.ip);
     awgProxies.push(awgNode(ep.tag, ep.ip, ep.port, priv, pub, v4, v6, res));
   }
-  return { awgEntries, awgProxies };
+  return { awgEntries, awgProxies, awgIps };
 }
 function buildEntries(warp, customMasqueEndpoints = null) {
   const { privateKey: priv, peerPublicKey: pub, ipv4: v4, ipv6: v6 } = warp;
   const entries = [], proxies = [];
   const v4Entries = [];
+  const ips = [];
   if (customMasqueEndpoints && customMasqueEndpoints.length > 0) {
     for (const ep of customMasqueEndpoints) {
       const n = ep.tag.startsWith("MASQUE-") ? ep.tag : `MASQUE-${ep.ip}:${ep.port}`;
       entries.push(n);
+      ips.push(ep.ip);
       if (!ep.ip.includes(":")) v4Entries.push(n);
       proxies.push(masqueNode(n, ep.ip, ep.port, priv, pub, v4, v6));
     }
   } else {
     for (const ip of [...V4, ...V6]) {
+      ips.push(ip);
       for (const port of PORTS) {
         const n = entryName(ip, port);
         entries.push(n);
@@ -596,6 +600,7 @@ function buildEntries(warp, customMasqueEndpoints = null) {
   }
   entries.push("\u5B98\u65B9\u57DF\u540D");
   v4Entries.push("\u5B98\u65B9\u57DF\u540D");
+  ips.push(SNI_NODE[0]);
   proxies.push(masqueNode(
     "\u5B98\u65B9\u57DF\u540D",
     SNI_NODE[0],
@@ -606,7 +611,7 @@ function buildEntries(warp, customMasqueEndpoints = null) {
     v6,
     OFFICIAL_SNI
   ));
-  return { entries, proxies, v4Entries };
+  return { entries, proxies, v4Entries, ips };
 }
 var AI_DOMAINS = [
   "openai.fm",
@@ -710,8 +715,18 @@ var AI_DOMAINS = [
 ];
 var q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 var p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
-function buildRules() {
+function buildRules(directIps = []) {
   const prov = [], rules = [];
+  const uniqueIps = [...new Set(directIps.filter(Boolean))];
+  for (const ip of uniqueIps) {
+    const cleanIp = ip.replace(/^\[|\]$/g, "").trim();
+    if (cleanIp) {
+      const cidr = cleanIp.includes(":") ? `${cleanIp}/128` : `${cleanIp}/32`;
+      rules.push(`  - IP-CIDR,${cidr},DIRECT,no-resolve`);
+    }
+  }
+  const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},\u{1F916} AI\u670D\u52A1`);
+  rules.push(...ai);
   RULESETS.forEach(([group, url], i) => {
     const pn = `rule${String(i).padStart(2, "0")}`;
     prov.push(`  ${pn}:
@@ -723,8 +738,7 @@ function buildRules() {
     path: ./ruleset/${pn}.list`);
     rules.push(`  - RULE-SET,${pn},${group}`);
   });
-  const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},\u{1F916} AI\u670D\u52A1`);
-  return { prov: prov.join("\n"), rules: [...ai, ...rules].join("\n") };
+  return { prov: prov.join("\n"), rules: rules.join("\n") };
 }
 function head(ipv6) {
   return `mixed-port: 7890
@@ -847,8 +861,6 @@ ${p(picks)}
     type: select
     proxies:
       - DIRECT
-      - \u{1F680} \u8282\u70B9\u9009\u62E9
-      - \u267B\uFE0F \u81EA\u52A8\u9009\u62E9
 
   - name: \u{1F6D1} \u5168\u7403\u62E6\u622A
     type: select
@@ -905,16 +917,19 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   let entries = [];
   let proxies = [];
   let v4Entries = [];
+  let directIps = [];
   if (protocolMode === "wg") {
-    const { awgEntries, awgProxies } = buildAwgEntries(warp, customWgEndpoints);
+    const { awgEntries, awgProxies, awgIps } = buildAwgEntries(warp, customWgEndpoints);
     entries = awgEntries;
     proxies = [...awgProxies];
     v4Entries = awgEntries;
+    directIps = [...awgIps];
   } else {
     const res = buildEntries(warp, customMsEndpoints);
     entries = res.entries;
     proxies = [...res.proxies];
     v4Entries = res.v4Entries;
+    directIps = [...res.ips || []];
   }
   const byLoc = {};
   if (enableOpera && opera && opera.landings && opera.landings.length) {
@@ -946,6 +961,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     }
   }
   if (targetProtonServers.length) {
+    directIps.push(...targetProtonServers.map((s) => s.ip));
     const dialerList = protocolMode === "wg" ? entries : v4Entries;
     for (const srv of targetProtonServers) {
       protonByServer[srv.name] = [];
@@ -964,7 +980,8 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1280
+    mtu: 1120
+    keepalive: 25
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
       }
@@ -1052,7 +1069,7 @@ ${q(names)}`).join("\n\n");
   if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
   if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames, ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
-  const { prov, rules } = buildRules();
+  const { prov, rules } = buildRules(directIps);
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
 # \u7531 Cloudflare Worker \u751F\u6210\u4E8E ${(/* @__PURE__ */ new Date()).toISOString()}
 
