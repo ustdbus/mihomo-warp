@@ -304,7 +304,18 @@ export default {
       const t = url.searchParams.get("token") || "";
       if (!(await verifyToken(cred, t)) && !authed) return notFound();
 
-      const yaml = await ensureConfig(env);
+      const forceRefresh = url.searchParams.get("refresh") === "1";
+      if (url.searchParams.get("clear_custom") === "1") {
+        await env.KV.delete(K_CUSTOM_WG);
+      }
+
+      let yaml;
+      if (forceRefresh) {
+        await rebuild(env);
+        yaml = await env.KV.get(K_CFG);
+      } else {
+        yaml = await ensureConfig(env);
+      }
       if (!yaml) {
         return new Response("配置生成失败，稍后重试或到管理页手动刷新",
           { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });

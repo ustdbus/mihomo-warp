@@ -184,7 +184,7 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   t("WG模式 Opera 组合为 40 个 (20 x 2)", rWg.combos === 40);
   // 20 个 AWG 端点 x 1 个 Proton 日本落地 = 20 个 Proton 全组合
   t("WG模式 Proton 落地笛卡尔积全组合 (20 x 1 = 20)", rWg.proton === 20);
-  t("WG模式 Proton 组合节点名带 @", rWg.yaml.includes("日本1@AWG-东京1"));
+  t("WG模式 Proton 组合节点名带 @", rWg.yaml.includes("日本1@AWG-优选01"));
 
   // 自动选择组 proxies 为叶子节点，不能包含策略组名
   const autoGroup = rWg.yaml.split("  - name: ♻️ 自动选择")[1].split("\n  - name:")[0];

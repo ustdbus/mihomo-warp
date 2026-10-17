@@ -425,27 +425,78 @@ async function fetchOpera() {
 
 // src/config.js
 var AWG_OPTIMIZED_ENDPOINTS = [
-  { ip: "188.114.99.214", port: 4500, tag: "AWG-\u4E1C\u4EAC1" },
-  { ip: "188.114.98.171", port: 2408, tag: "AWG-\u4E1C\u4EAC2" },
-  { ip: "188.114.97.25", port: 1701, tag: "AWG-\u4E1C\u4EAC3" },
-  { ip: "188.114.99.171", port: 2408, tag: "AWG-\u4E1C\u4EAC4" },
-  { ip: "188.114.97.9", port: 4500, tag: "AWG-\u4E1C\u4EAC5" },
-  { ip: "188.114.99.99", port: 4500, tag: "AWG-\u4E1C\u4EAC6" },
-  { ip: "188.114.97.214", port: 2408, tag: "AWG-\u4E1C\u4EAC7" },
-  { ip: "188.114.96.99", port: 500, tag: "AWG-\u4E1C\u4EAC8" },
-  { ip: "188.114.96.15", port: 1701, tag: "AWG-\u9999\u6E2F1" },
-  { ip: "188.114.99.20", port: 4500, tag: "AWG-\u9999\u6E2F2" },
-  { ip: "188.114.96.171", port: 4500, tag: "AWG-\u9999\u6E2F3" },
-  { ip: "188.114.97.128", port: 4500, tag: "AWG-\u9999\u6E2F4" },
-  { ip: "188.114.99.7", port: 500, tag: "AWG-\u9999\u6E2F5" },
-  { ip: "188.114.98.70", port: 1701, tag: "AWG-\u9999\u6E2F6" },
-  { ip: "188.114.99.9", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
-  { ip: "188.114.97.70", port: 500, tag: "AWG-\u65B0\u52A0\u57612" },
-  { ip: "188.114.97.99", port: 1701, tag: "AWG-\u65B0\u52A0\u57613" },
-  { ip: "188.114.96.8", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
-  { ip: "188.114.96.6", port: 1701, tag: "AWG-\u65B0\u52A0\u57615" },
-  { ip: "188.114.99.25", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" }
+  { ip: "8.35.211.50", port: 4500, tag: "AWG-\u4F18\u900901" },
+  { ip: "8.35.211.10", port: 500, tag: "AWG-\u4F18\u900902" },
+  { ip: "8.39.125.2", port: 2408, tag: "AWG-\u4F18\u900903" },
+  { ip: "8.39.125.171", port: 1180, tag: "AWG-\u4F18\u900904" },
+  { ip: "8.39.125.99", port: 1180, tag: "AWG-\u4F18\u900905" },
+  { ip: "8.39.125.10", port: 2408, tag: "AWG-\u4F18\u900906" },
+  { ip: "8.39.125.10", port: 2371, tag: "AWG-\u4F18\u900907" },
+  { ip: "8.39.125.70", port: 2408, tag: "AWG-\u4F18\u900908" },
+  { ip: "8.35.211.100", port: 500, tag: "AWG-\u4F18\u900909" },
+  { ip: "8.39.125.50", port: 2408, tag: "AWG-\u4F18\u900910" },
+  { ip: "8.39.125.7", port: 4500, tag: "AWG-\u4F18\u900911" },
+  { ip: "8.35.211.7", port: 500, tag: "AWG-\u4F18\u900912" },
+  { ip: "8.39.125.50", port: 4500, tag: "AWG-\u4F18\u900913" },
+  { ip: "8.39.125.128", port: 891, tag: "AWG-\u4F18\u900914" },
+  { ip: "8.39.125.214", port: 500, tag: "AWG-\u4F18\u900915" },
+  { ip: "8.35.211.2", port: 2408, tag: "AWG-\u4F18\u900916" },
+  { ip: "8.39.125.25", port: 4500, tag: "AWG-\u4F18\u900917" },
+  { ip: "8.39.125.171", port: 4500, tag: "AWG-\u4F18\u900918" },
+  { ip: "8.35.211.70", port: 500, tag: "AWG-\u4F18\u900919" },
+  { ip: "8.35.211.50", port: 7103, tag: "AWG-\u4F18\u900920" }
 ];
+var XIAOHE_SEED_RANGES = [
+  "162.159.196.0/24",
+  "162.159.195.0/24",
+  "162.159.192.0/24",
+  "162.159.193.0/24",
+  "162.159.204.0/24",
+  "162.159.197.0/24",
+  "162.159.198.0/24",
+  "172.65.251.0/24",
+  "188.114.96.0/24",
+  "188.114.97.0/24",
+  "188.114.98.0/24",
+  "188.114.99.0/24",
+  "162.159.36.0/24",
+  "162.159.46.0/24",
+  "8.35.211.0/24",
+  "8.39.125.0/24"
+];
+var XIAOHE_PORTS = [500, 1701, 2408, 4500, 1180, 2371, 7103, 891];
+function sampleXiaoheEndpoints(count = 20) {
+  const result = [];
+  const used = /* @__PURE__ */ new Set();
+  const ranges = [...XIAOHE_SEED_RANGES].sort(() => Math.random() - 0.5);
+  let attempts = 0;
+  while (result.length < count && attempts < 500) {
+    attempts++;
+    const cidr = ranges[result.length % ranges.length];
+    const base = cidr.replace(".0/24", "");
+    const host = Math.floor(Math.random() * 253) + 1;
+    const ip = `${base}.${host}`;
+    const port = XIAOHE_PORTS[Math.floor(Math.random() * XIAOHE_PORTS.length)];
+    const key = `${ip}:${port}`;
+    if (!used.has(key)) {
+      used.add(key);
+      const idx = String(result.length + 1).padStart(2, "0");
+      result.push({ ip, port, tag: `AWG-\u4F18\u9009${idx}` });
+    }
+  }
+  if (result.length < count) {
+    for (const ep of AWG_OPTIMIZED_ENDPOINTS) {
+      if (result.length >= count) break;
+      const key = `${ep.ip}:${ep.port}`;
+      if (!used.has(key)) {
+        used.add(key);
+        const idx = String(result.length + 1).padStart(2, "0");
+        result.push({ ...ep, tag: `AWG-\u4F18\u9009${idx}` });
+      }
+    }
+  }
+  return result;
+}
 var V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 var V6 = [
   "2606:4700:103::1",
@@ -562,7 +613,7 @@ function buildAwgEntries(warp, customEndpoints = null) {
   const res = warp.reserved || [13, 86, 243];
   const v4 = warp.ipv4 || "172.16.0.2";
   const v6 = warp.ipv6 || "2606:4700:110:8ea3:8c9c:bede:a871:1963";
-  const endpoints = customEndpoints && customEndpoints.length > 0 ? customEndpoints : AWG_OPTIMIZED_ENDPOINTS;
+  const endpoints = customEndpoints && customEndpoints.length > 0 ? customEndpoints : sampleXiaoheEndpoints(20);
   const awgEntries = [];
   const awgProxies = [];
   const awgIps = [];
@@ -2881,7 +2932,17 @@ var index_default = {
     if (path === subPath) {
       const t = url.searchParams.get("token") || "";
       if (!await verifyToken(cred, t) && !authed) return notFound();
-      const yaml = await ensureConfig(env);
+      const forceRefresh = url.searchParams.get("refresh") === "1";
+      if (url.searchParams.get("clear_custom") === "1") {
+        await env.KV.delete(K_CUSTOM_WG);
+      }
+      let yaml;
+      if (forceRefresh) {
+        await rebuild(env);
+        yaml = await env.KV.get(K_CFG);
+      } else {
+        yaml = await ensureConfig(env);
+      }
       if (!yaml) {
         return new Response(
           "\u914D\u7F6E\u751F\u6210\u5931\u8D25\uFF0C\u7A0D\u540E\u91CD\u8BD5\u6216\u5230\u7BA1\u7406\u9875\u624B\u52A8\u5237\u65B0",

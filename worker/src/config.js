@@ -1,28 +1,88 @@
 // 生成 mihomo 配置：支持 WireGuard (AmneziaWG) 或 MASQUE 专属协议与多落地组合。
 
-// 实测 20 个国内直连极速优化 Cloudflare AWG 端点池（覆盖 188.114 官方抗阻断存活段，延迟低至 500ms）
+// 优选 20 个 Cloudflare AWG/WireGuard 默认前置接入点（保底与预设）
 export const AWG_OPTIMIZED_ENDPOINTS = [
-  { ip: "188.114.99.214", port: 4500, tag: "AWG-东京1" },
-  { ip: "188.114.98.171", port: 2408, tag: "AWG-东京2" },
-  { ip: "188.114.97.25", port: 1701, tag: "AWG-东京3" },
-  { ip: "188.114.99.171", port: 2408, tag: "AWG-东京4" },
-  { ip: "188.114.97.9", port: 4500, tag: "AWG-东京5" },
-  { ip: "188.114.99.99", port: 4500, tag: "AWG-东京6" },
-  { ip: "188.114.97.214", port: 2408, tag: "AWG-东京7" },
-  { ip: "188.114.96.99", port: 500, tag: "AWG-东京8" },
-  { ip: "188.114.96.15", port: 1701, tag: "AWG-香港1" },
-  { ip: "188.114.99.20", port: 4500, tag: "AWG-香港2" },
-  { ip: "188.114.96.171", port: 4500, tag: "AWG-香港3" },
-  { ip: "188.114.97.128", port: 4500, tag: "AWG-香港4" },
-  { ip: "188.114.99.7", port: 500, tag: "AWG-香港5" },
-  { ip: "188.114.98.70", port: 1701, tag: "AWG-香港6" },
-  { ip: "188.114.99.9", port: 4500, tag: "AWG-新加坡1" },
-  { ip: "188.114.97.70", port: 500, tag: "AWG-新加坡2" },
-  { ip: "188.114.97.99", port: 1701, tag: "AWG-新加坡3" },
-  { ip: "188.114.96.8", port: 4500, tag: "AWG-新加坡4" },
-  { ip: "188.114.96.6", port: 1701, tag: "AWG-新加坡5" },
-  { ip: "188.114.99.25", port: 4500, tag: "AWG-新加坡6" },
+  { ip: "8.35.211.50", port: 4500, tag: "AWG-优选01" },
+  { ip: "8.35.211.10", port: 500, tag: "AWG-优选02" },
+  { ip: "8.39.125.2", port: 2408, tag: "AWG-优选03" },
+  { ip: "8.39.125.171", port: 1180, tag: "AWG-优选04" },
+  { ip: "8.39.125.99", port: 1180, tag: "AWG-优选05" },
+  { ip: "8.39.125.10", port: 2408, tag: "AWG-优选06" },
+  { ip: "8.39.125.10", port: 2371, tag: "AWG-优选07" },
+  { ip: "8.39.125.70", port: 2408, tag: "AWG-优选08" },
+  { ip: "8.35.211.100", port: 500, tag: "AWG-优选09" },
+  { ip: "8.39.125.50", port: 2408, tag: "AWG-优选10" },
+  { ip: "8.39.125.7", port: 4500, tag: "AWG-优选11" },
+  { ip: "8.35.211.7", port: 500, tag: "AWG-优选12" },
+  { ip: "8.39.125.50", port: 4500, tag: "AWG-优选13" },
+  { ip: "8.39.125.128", port: 891, tag: "AWG-优选14" },
+  { ip: "8.39.125.214", port: 500, tag: "AWG-优选15" },
+  { ip: "8.35.211.2", port: 2408, tag: "AWG-优选16" },
+  { ip: "8.39.125.25", port: 4500, tag: "AWG-优选17" },
+  { ip: "8.39.125.171", port: 4500, tag: "AWG-优选18" },
+  { ip: "8.35.211.70", port: 500, tag: "AWG-优选19" },
+  { ip: "8.35.211.50", port: 7103, tag: "AWG-优选20" },
 ];
+
+// xiaohe (Aether Core) 提供的 Cloudflare 存活 IP 段池
+export const XIAOHE_SEED_RANGES = [
+  "162.159.196.0/24",
+  "162.159.195.0/24",
+  "162.159.192.0/24",
+  "162.159.193.0/24",
+  "162.159.204.0/24",
+  "162.159.197.0/24",
+  "162.159.198.0/24",
+  "172.65.251.0/24",
+  "188.114.96.0/24",
+  "188.114.97.0/24",
+  "188.114.98.0/24",
+  "188.114.99.0/24",
+  "162.159.36.0/24",
+  "162.159.46.0/24",
+  "8.35.211.0/24",
+  "8.39.125.0/24",
+];
+
+// Cloudflare WireGuard 高连通抗阻断常用端口
+export const XIAOHE_PORTS = [500, 1701, 2408, 4500, 1180, 2371, 7103, 891];
+
+/** 从 xiaohe 提供的 IP 段中动态组合采样 count 个不重复的 IP:Port 前置接入点 */
+export function sampleXiaoheEndpoints(count = 20) {
+  const result = [];
+  const used = new Set();
+  const ranges = [...XIAOHE_SEED_RANGES].sort(() => Math.random() - 0.5);
+
+  let attempts = 0;
+  while (result.length < count && attempts < 500) {
+    attempts++;
+    const cidr = ranges[result.length % ranges.length];
+    const base = cidr.replace(".0/24", "");
+    const host = Math.floor(Math.random() * 253) + 1;
+    const ip = `${base}.${host}`;
+    const port = XIAOHE_PORTS[Math.floor(Math.random() * XIAOHE_PORTS.length)];
+    const key = `${ip}:${port}`;
+    if (!used.has(key)) {
+      used.add(key);
+      const idx = String(result.length + 1).padStart(2, "0");
+      result.push({ ip, port, tag: `AWG-优选${idx}` });
+    }
+  }
+
+  // 若采样不足则用静态优选池补齐
+  if (result.length < count) {
+    for (const ep of AWG_OPTIMIZED_ENDPOINTS) {
+      if (result.length >= count) break;
+      const key = `${ep.ip}:${ep.port}`;
+      if (!used.has(key)) {
+        used.add(key);
+        const idx = String(result.length + 1).padStart(2, "0");
+        result.push({ ...ep, tag: `AWG-优选${idx}` });
+      }
+    }
+  }
+  return result;
+}
 
 const V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 const V6 = ["2606:4700:103::1", "2606:4700:103::2",
@@ -145,7 +205,7 @@ export function buildAwgEntries(warp, customEndpoints = null) {
 
   const endpoints = (customEndpoints && customEndpoints.length > 0)
     ? customEndpoints
-    : AWG_OPTIMIZED_ENDPOINTS;
+    : sampleXiaoheEndpoints(20);
 
   const awgEntries = [];
   const awgProxies = [];
