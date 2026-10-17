@@ -212,6 +212,61 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   t("关闭 WARP直连 后无 WARP直连 组", !rOff.yaml.includes("  - name: WARP直连"));
 }
 
+// ---- Proton 地区自由选择与分类排序测试 ----
+{
+  const messyProton = {
+    privateKey: "PK", expiresAt: Math.floor(Date.now()/1000)+604800,
+    servers: [
+      { name: "新加坡1", cc: "SG", ip: "2.2.2.1", port: 51820, pub: "SG1" },
+      { name: "日本2", cc: "JP", ip: "1.1.1.2", port: 51820, pub: "JP2" },
+      { name: "美国1", cc: "US", ip: "3.3.3.1", port: 51820, pub: "US1" },
+      { name: "日本1", cc: "JP", ip: "1.1.1.1", port: 51820, pub: "JP1" },
+      { name: "新加坡2", cc: "SG", ip: "2.2.2.2", port: 51820, pub: "SG2" },
+      { name: "日本3", cc: "JP", ip: "1.1.1.3", port: 51820, pub: "JP3" },
+    ],
+  };
+
+  // 1. 只选日本
+  const rJpOnly = buildConfig(warp, opera, messyProton, null, {
+    protocolMode: "wg",
+    protonRegions: ["日本"],
+  });
+  t("只勾选日本时仅 3 台落地服务器", rJpOnly.protonServers === 3);
+  t("只勾选日本时不含新加坡或美国落地组及节点",
+    !rJpOnly.yaml.includes("Proton-新加坡") &&
+    !rJpOnly.yaml.includes("Proton-美国") &&
+    !rJpOnly.yaml.includes("美国1") &&
+    !/新加坡\d+@/.test(rJpOnly.yaml));
+  t("生成日本专属独立策略组 日本1、日本2、日本3",
+    rJpOnly.yaml.includes("- name: 日本1\n") &&
+    rJpOnly.yaml.includes("- name: 日本2\n") &&
+    rJpOnly.yaml.includes("- name: 日本3\n"));
+  t("生成大区组 Proton-日本 及 Proton-日本-自动",
+    rJpOnly.yaml.includes("- name: Proton-日本\n") &&
+    rJpOnly.yaml.includes("- name: Proton-日本-自动\n"));
+
+  // 2. 选日本与新加坡：验证排序整洁不乱序穿插
+  const rBoth = buildConfig(warp, opera, messyProton, null, {
+    protocolMode: "wg",
+    protonRegions: ["日本", "新加坡"],
+  });
+  t("多选时落地服务器为 5 台", rBoth.protonServers === 5);
+  const posJp1 = rBoth.yaml.indexOf("- name: 日本1\n");
+  const posJp2 = rBoth.yaml.indexOf("- name: 日本2\n");
+  const posJp3 = rBoth.yaml.indexOf("- name: 日本3\n");
+  const posSg1 = rBoth.yaml.indexOf("- name: 新加坡1\n");
+  const posSg2 = rBoth.yaml.indexOf("- name: 新加坡2\n");
+  t("按国家与编号有序排列 (日本1 < 日本2 < 日本3 < 新加坡1 < 新加坡2)",
+    posJp1 < posJp2 && posJp2 < posJp3 && posJp3 < posSg1 && posSg1 < posSg2);
+
+  // 3. 显式清空 (0 地区)
+  const rEmpty = buildConfig(warp, opera, messyProton, null, {
+    protocolMode: "wg",
+    protonRegions: [],
+  });
+  t("显式清空地区时生成 0 个 Proton 节点", rEmpty.proton === 0 && rEmpty.protonServers === 0);
+}
+
 console.log(`\n通过 ${pass} 失败 ${fail}`);
 if (fail) process.exit(1);
 

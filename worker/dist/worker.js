@@ -869,6 +869,30 @@ ${p(picks)}
       - \u{1F3AF} \u5168\u7403\u76F4\u8FDE
       - \u267B\uFE0F \u81EA\u52A8\u9009\u62E9`;
 }
+var PROTON_CC_MAP = {
+  JP: "\u65E5\u672C",
+  SG: "\u65B0\u52A0\u5761",
+  US: "\u7F8E\u56FD",
+  CA: "\u52A0\u62FF\u5927",
+  NL: "\u8377\u5170",
+  CH: "\u745E\u58EB",
+  PL: "\u6CE2\u5170",
+  RO: "\u7F57\u9A6C\u5C3C\u4E9A",
+  NO: "\u632A\u5A01",
+  MX: "\u58A8\u897F\u54E5"
+};
+function getProtonRegion(srv) {
+  if (srv.cc && PROTON_CC_MAP[srv.cc.toUpperCase()]) {
+    return PROTON_CC_MAP[srv.cc.toUpperCase()];
+  }
+  const match = (srv.name || "").match(/^[\u4e00-\u9fa5]+/);
+  if (match) return match[0];
+  return (srv.name || "").replace(/\d+$/, "").trim();
+}
+function getProtonIndex(srv) {
+  const match = (srv.name || "").match(/\d+$/);
+  return match ? parseInt(match[0], 10) : 999;
+}
 function buildConfig(warp, opera, proton, wind, options = {}) {
   const protocolMode = options.protocolMode === "wg" ? "wg" : options.protocolMode === "masque" ? "masque" : options.protocolMode ? options.protocolMode : "masque";
   const enableOpera = options.enableOpera !== false;
@@ -908,26 +932,30 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   let protonNames = [];
   const protonByServer = {};
   const protonByCC = {};
-  const selectedRegions = Array.isArray(protonRegions) && protonRegions.length > 0 ? protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
-  const targetProtonServers = enableProton && proton && proton.servers && proton.servers.length ? proton.servers.filter((s) => {
-    const reg = s.name.replace(/\d+$/, "");
-    const cc = (s.cc || "").toUpperCase();
-    return selectedRegions.some((r) => {
-      const ru = r.toUpperCase();
-      return s.name.includes(r) || reg === r || cc === ru || (s.name || "").toUpperCase().startsWith(ru);
-    });
-  }) : [];
+  const selectedRegions = Array.isArray(protonRegions) ? protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+  const targetProtonServers = [];
+  if (enableProton && proton && Array.isArray(proton.servers)) {
+    for (const reg of selectedRegions) {
+      const matched = proton.servers.filter((s) => {
+        const r = getProtonRegion(s);
+        const cc = (s.cc || "").toUpperCase();
+        return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
+      });
+      matched.sort((a, b) => getProtonIndex(a) - getProtonIndex(b));
+      targetProtonServers.push(...matched);
+    }
+  }
   if (targetProtonServers.length) {
     const dialerList = protocolMode === "wg" ? entries : v4Entries;
     for (const srv of targetProtonServers) {
       protonByServer[srv.name] = [];
-      const cc = srv.name.replace(/\d+$/, "");
-      protonByCC[cc] = protonByCC[cc] || [];
+      const reg = getProtonRegion(srv);
+      protonByCC[reg] = protonByCC[reg] || [];
       for (const ent of dialerList) {
         const name = `${srv.name}@${ent}`;
         protonNames.push(name);
         protonByServer[srv.name].push(name);
-        protonByCC[cc].push(name);
+        protonByCC[reg].push(name);
         proxies.push(`  - name: "${name}"
     type: wireguard
     server: ${srv.ip}
@@ -990,7 +1018,17 @@ ${q(names)}`
     return `  - name: Proton-${cc}
     type: select
     proxies:
-${p(matchedServers.length ? matchedServers : names)}`;
+      - Proton-${cc}-\u81EA\u52A8
+${p(matchedServers.length ? matchedServers : names)}
+
+  - name: Proton-${cc}-\u81EA\u52A8
+    type: url-test
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 60
+    lazy: true
+    proxies:
+${q(names)}`;
   }).join("\n\n");
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
@@ -1012,7 +1050,7 @@ ${q(names)}`).join("\n\n");
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
-  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...serverGroupNames);
+  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames, ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
   const { prov, rules } = buildRules();
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
@@ -1482,7 +1520,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       protonRegionsMap[reg] = (protonRegionsMap[reg] || 0) + 1;
     }
   }
-  const currentProtonRegions = Array.isArray(settings?.protonRegions) && settings.protonRegions.length > 0 ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+  const currentProtonRegions = Array.isArray(settings?.protonRegions) ? settings.protonRegions : Array.isArray(s.features?.protonRegions) ? s.features.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
   const flagMap = {
     "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
     "\u65B0\u52A0\u5761": "\u{1F1F8}\u{1F1EC}",
@@ -1495,6 +1533,15 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     "\u7F57\u9A6C\u5C3C\u4E9A": "\u{1F1F7}\u{1F1F4}",
     "\u58A8\u897F\u54E5": "\u{1F1F2}\u{1F1FD}"
   };
+  const REGION_ORDER = ["\u65E5\u672C", "\u65B0\u52A0\u5761", "\u7F8E\u56FD", "\u52A0\u62FF\u5927", "\u8377\u5170", "\u745E\u58EB", "\u632A\u5A01", "\u6CE2\u5170", "\u7F57\u9A6C\u5C3C\u4E9A", "\u58A8\u897F\u54E5"];
+  const sortedRegionEntries = Object.entries(protonRegionsMap).sort(([a], [b]) => {
+    const ia = REGION_ORDER.indexOf(a);
+    const ib = REGION_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b, "zh-CN");
+  });
   const row = (k, v, cls = "") => `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head>
@@ -1674,7 +1721,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       ${Object.keys(protonRegionsMap).length ? `
       <div class="row" style="margin-top:14px"><span class="k">\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9</span><span class="v ok">\u5DF2\u52FE\u9009 ${currentProtonRegions.filter((r) => protonRegionsMap[r]).length} \u4E2A\u5730\u533A (${stat.protonServers || 0} \u53F0\u670D\u52A1\u5668)</span></div>
       <div class="switch-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:10px 0">
-        ${Object.entries(protonRegionsMap).map(([reg, count]) => {
+        ${sortedRegionEntries.map(([reg, count]) => {
     const isChecked = currentProtonRegions.includes(reg);
     const flag = flagMap[reg] || "\u{1F310}";
     return `<label class="switch-item" style="padding:8px 10px">
@@ -1993,7 +2040,8 @@ async function getSettings(env) {
     enableOpera: s.enableOpera ?? true,
     enableProton: s.enableProton ?? true,
     enableWarpDirect: s.enableWarpDirect ?? true,
-    enableWind: s.enableWind ?? true
+    enableWind: s.enableWind ?? true,
+    protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null
   };
 }
 async function getWarp(env, force = false, protocol = "wg") {
@@ -2062,7 +2110,7 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
-      protonRegions: settings.protonRegions || ["\u65E5\u672C", "\u65B0\u52A0\u5761"]
+      protonRegions: Array.isArray(settings.protonRegions) ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"]
     },
     stats: {
       entries: cfg.entries,

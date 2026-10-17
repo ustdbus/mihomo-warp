@@ -241,9 +241,9 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       protonRegionsMap[reg] = (protonRegionsMap[reg] || 0) + 1;
     }
   }
-  const currentProtonRegions = Array.isArray(settings?.protonRegions) && settings.protonRegions.length > 0
+  const currentProtonRegions = Array.isArray(settings?.protonRegions)
     ? settings.protonRegions
-    : ["日本", "新加坡"];
+    : (Array.isArray(s.features?.protonRegions) ? s.features.protonRegions : ["日本", "新加坡"]);
 
   const flagMap = {
     "日本": "🇯🇵",
@@ -257,6 +257,16 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     "罗马尼亚": "🇷🇴",
     "墨西哥": "🇲🇽",
   };
+
+  const REGION_ORDER = ["日本", "新加坡", "美国", "加拿大", "荷兰", "瑞士", "挪威", "波兰", "罗马尼亚", "墨西哥"];
+  const sortedRegionEntries = Object.entries(protonRegionsMap).sort(([a], [b]) => {
+    const ia = REGION_ORDER.indexOf(a);
+    const ib = REGION_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b, "zh-CN");
+  });
 
   const row = (k, v, cls = "") =>
     `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
@@ -439,7 +449,7 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       ${Object.keys(protonRegionsMap).length ? `
       <div class="row" style="margin-top:14px"><span class="k">落地国家/地区选择</span><span class="v ok">已勾选 ${currentProtonRegions.filter(r => protonRegionsMap[r]).length} 个地区 (${stat.protonServers || 0} 台服务器)</span></div>
       <div class="switch-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:10px 0">
-        ${Object.entries(protonRegionsMap).map(([reg, count]) => {
+        ${sortedRegionEntries.map(([reg, count]) => {
           const isChecked = currentProtonRegions.includes(reg);
           const flag = flagMap[reg] || "🌐";
           return `<label class="switch-item" style="padding:8px 10px">

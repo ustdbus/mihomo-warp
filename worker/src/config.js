@@ -385,6 +385,26 @@ ${p(picks)}
       - ♻️ 自动选择`;
 }
 
+export const PROTON_CC_MAP = {
+  JP: "日本", SG: "新加坡", US: "美国", CA: "加拿大",
+  NL: "荷兰", CH: "瑞士", PL: "波兰", RO: "罗马尼亚",
+  NO: "挪威", MX: "墨西哥",
+};
+
+export function getProtonRegion(srv) {
+  if (srv.cc && PROTON_CC_MAP[srv.cc.toUpperCase()]) {
+    return PROTON_CC_MAP[srv.cc.toUpperCase()];
+  }
+  const match = (srv.name || "").match(/^[\u4e00-\u9fa5]+/);
+  if (match) return match[0];
+  return (srv.name || "").replace(/\d+$/, "").trim();
+}
+
+export function getProtonIndex(srv) {
+  const match = (srv.name || "").match(/\d+$/);
+  return match ? parseInt(match[0], 10) : 999;
+}
+
 export function buildConfig(warp, opera, proton, wind, options = {}) {
   const protocolMode = options.protocolMode === "wg" ? "wg" : (options.protocolMode === "masque" ? "masque" : (options.protocolMode ? options.protocolMode : "masque"));
   const enableOpera = options.enableOpera !== false;
@@ -431,33 +451,36 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   let protonNames = [];
   const protonByServer = {};
   const protonByCC = {};
-  const selectedRegions = Array.isArray(protonRegions) && protonRegions.length > 0
+  const selectedRegions = Array.isArray(protonRegions)
     ? protonRegions
     : ["日本", "新加坡"]; // 默认亚太优选: 日本与新加坡
 
-  const targetProtonServers = (enableProton && proton && proton.servers && proton.servers.length)
-    ? proton.servers.filter((s) => {
-        const reg = s.name.replace(/\d+$/, "");
+  // 严格按用户所选国家及国家内序号排序，确保分类准确、整洁、不穿插
+  const targetProtonServers = [];
+  if (enableProton && proton && Array.isArray(proton.servers)) {
+    for (const reg of selectedRegions) {
+      const matched = proton.servers.filter((s) => {
+        const r = getProtonRegion(s);
         const cc = (s.cc || "").toUpperCase();
-        return selectedRegions.some((r) => {
-          const ru = r.toUpperCase();
-          return s.name.includes(r) || reg === r || cc === ru || (s.name || "").toUpperCase().startsWith(ru);
-        });
-      })
-    : [];
+        return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
+      });
+      matched.sort((a, b) => getProtonIndex(a) - getProtonIndex(b));
+      targetProtonServers.push(...matched);
+    }
+  }
 
   if (targetProtonServers.length) {
     const dialerList = protocolMode === "wg" ? entries : v4Entries;
     for (const srv of targetProtonServers) {
       protonByServer[srv.name] = [];
-      const cc = srv.name.replace(/\d+$/, "");
-      protonByCC[cc] = protonByCC[cc] || [];
+      const reg = getProtonRegion(srv);
+      protonByCC[reg] = protonByCC[reg] || [];
 
       for (const ent of dialerList) {
         const name = `${srv.name}@${ent}`;
         protonNames.push(name);
         protonByServer[srv.name].push(name);
-        protonByCC[cc].push(name);
+        protonByCC[reg].push(name);
 
         proxies.push(`  - name: "${name}"
     type: wireguard
@@ -527,7 +550,17 @@ ${q(names)}`
     return `  - name: Proton-${cc}
     type: select
     proxies:
-${p(matchedServers.length ? matchedServers : names)}`;
+      - Proton-${cc}-自动
+${p(matchedServers.length ? matchedServers : names)}
+
+  - name: Proton-${cc}-自动
+    type: url-test
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 60
+    lazy: true
+    proxies:
+${q(names)}`;
   }).join("\n\n");
 
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
@@ -555,7 +588,7 @@ ${q(names)}`).join("\n\n");
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP直连");
-  if (protonNames.length) picks.push("Proton线路", ...serverGroupNames);
+  if (protonNames.length) picks.push("Proton线路", ...protonCCNames, ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
 
   const { prov, rules } = buildRules();

@@ -62,6 +62,7 @@ async function getSettings(env) {
     enableProton: s.enableProton ?? true,
     enableWarpDirect: s.enableWarpDirect ?? true,
     enableWind: s.enableWind ?? true,
+    protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null,
   };
 }
 
@@ -143,7 +144,9 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
-      protonRegions: settings.protonRegions || ["日本", "新加坡"],
+      protonRegions: Array.isArray(settings.protonRegions)
+        ? settings.protonRegions
+        : ["日本", "新加坡"],
     },
     stats: {
       entries: cfg.entries,

@@ -87,6 +87,9 @@ t("对密码登录 200",
 
 // ---- 订阅 ----
 kv.set("config:yaml", "# fake\nproxies: []");
+kv.set("state:meta", JSON.stringify({
+  expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+}));
 const home = await (await worker.fetch(req("/", { headers: auth }), env)).text();
 const tok = (home.match(/token=([\w.\-]+)/) || [])[1];
 t("状态页给出带 token 的订阅链接", !!tok);
@@ -328,6 +331,39 @@ t("新密码能登上",
   await worker.fetch(post("/api/wind/clear", {}, a6), env);
   t("能清除 Windscribe 账号", !kv.get("wind:account"));
   t("清除 wind 不动 Proton", !!kv.get("proton:cred"));
+}
+
+// ---- Proton 地区配置接口测试 ----
+{
+  reset();
+  await worker.fetch(post("/api/setup", { password: PW, confirm: PW }), env);
+  const c7 = (await worker.fetch(post("/login", { password: PW }), env))
+    .headers.get("set-cookie").split(";")[0];
+  const a7 = { cookie: c7 };
+
+  // 先放入一个 Proton 凭据和模拟 WARP 设备（避免 rebuild 触发外网请求）
+  kv.set("warp:device", JSON.stringify({
+    privateKey: "FAKE", peerPublicKey: "FAKE", protocol: "wg",
+    ipv4: "172.16.0.2", ipv6: "2606::1", deviceId: "d", registeredAt: new Date().toISOString()
+  }));
+  kv.set("settings", JSON.stringify({
+    enableOpera: false, protocolMode: "wg"
+  }));
+  kv.set("proton:cred", JSON.stringify({
+    v: 1, privateKey: "K", expiresAt: Math.floor(Date.now() / 1000) + 604800,
+    servers: [{ name: "日本1", cc: "JP", ip: "1.1.1.1", port: 51820, pub: "P" }]
+  }));
+
+  // 1. 保存所选地区
+  const rSet = await worker.fetch(post("/api/settings/proton-regions", { regions: ["日本"] }, a7), env);
+  const jSet = await rSet.json();
+  t("保存地区成功", rSet.status === 200 && jSet.ok);
+  const savedSettings = JSON.parse(kv.get("settings") || "{}");
+  t("settings 正确持久化 protonRegions", Array.isArray(savedSettings.protonRegions) && savedSettings.protonRegions[0] === "日本");
+
+  // 2. 检查首页渲染中是否保持只勾选日本
+  const page = await (await worker.fetch(req("/", { headers: a7 }), env)).text();
+  t("首页渲染中包含已勾选的日本", page.includes('name="proton_region" value="日本" checked'));
 }
 
 console.log(`\n通过 ${pass} 失败 ${fail}`);
