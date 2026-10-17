@@ -425,26 +425,26 @@ async function fetchOpera() {
 
 // src/config.js
 var AWG_OPTIMIZED_ENDPOINTS = [
-  { ip: "162.159.192.5", port: 1701, tag: "AWG-\u4E1C\u4EAC1" },
-  { ip: "162.159.192.6", port: 1701, tag: "AWG-\u4E1C\u4EAC2" },
-  { ip: "162.159.193.5", port: 1701, tag: "AWG-\u4E1C\u4EAC3" },
-  { ip: "162.159.193.6", port: 1701, tag: "AWG-\u4E1C\u4EAC4" },
-  { ip: "162.159.195.5", port: 1701, tag: "AWG-\u4E1C\u4EAC5" },
-  { ip: "162.159.195.6", port: 1701, tag: "AWG-\u4E1C\u4EAC6" },
-  { ip: "188.114.96.2", port: 1701, tag: "AWG-\u4E1C\u4EAC7" },
-  { ip: "188.114.97.2", port: 1701, tag: "AWG-\u4E1C\u4EAC8" },
-  { ip: "162.159.192.1", port: 500, tag: "AWG-\u9999\u6E2F1" },
-  { ip: "162.159.192.2", port: 500, tag: "AWG-\u9999\u6E2F2" },
-  { ip: "162.159.193.1", port: 500, tag: "AWG-\u9999\u6E2F3" },
-  { ip: "162.159.193.2", port: 500, tag: "AWG-\u9999\u6E2F4" },
-  { ip: "162.159.195.1", port: 500, tag: "AWG-\u9999\u6E2F5" },
-  { ip: "162.159.195.2", port: 500, tag: "AWG-\u9999\u6E2F6" },
-  { ip: "162.159.192.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
-  { ip: "162.159.192.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57612" },
-  { ip: "162.159.193.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57613" },
-  { ip: "162.159.193.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
-  { ip: "162.159.195.3", port: 4500, tag: "AWG-\u65B0\u52A0\u57615" },
-  { ip: "162.159.195.4", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" }
+  { ip: "188.114.99.214", port: 4500, tag: "AWG-\u4E1C\u4EAC1" },
+  { ip: "188.114.98.171", port: 2408, tag: "AWG-\u4E1C\u4EAC2" },
+  { ip: "188.114.97.25", port: 1701, tag: "AWG-\u4E1C\u4EAC3" },
+  { ip: "188.114.99.171", port: 2408, tag: "AWG-\u4E1C\u4EAC4" },
+  { ip: "188.114.97.9", port: 4500, tag: "AWG-\u4E1C\u4EAC5" },
+  { ip: "188.114.99.99", port: 4500, tag: "AWG-\u4E1C\u4EAC6" },
+  { ip: "188.114.97.214", port: 2408, tag: "AWG-\u4E1C\u4EAC7" },
+  { ip: "188.114.96.99", port: 500, tag: "AWG-\u4E1C\u4EAC8" },
+  { ip: "188.114.96.15", port: 1701, tag: "AWG-\u9999\u6E2F1" },
+  { ip: "188.114.99.20", port: 4500, tag: "AWG-\u9999\u6E2F2" },
+  { ip: "188.114.96.171", port: 4500, tag: "AWG-\u9999\u6E2F3" },
+  { ip: "188.114.97.128", port: 4500, tag: "AWG-\u9999\u6E2F4" },
+  { ip: "188.114.99.7", port: 500, tag: "AWG-\u9999\u6E2F5" },
+  { ip: "188.114.98.70", port: 1701, tag: "AWG-\u9999\u6E2F6" },
+  { ip: "188.114.99.9", port: 4500, tag: "AWG-\u65B0\u52A0\u57611" },
+  { ip: "188.114.97.70", port: 500, tag: "AWG-\u65B0\u52A0\u57612" },
+  { ip: "188.114.97.99", port: 1701, tag: "AWG-\u65B0\u52A0\u57613" },
+  { ip: "188.114.96.8", port: 4500, tag: "AWG-\u65B0\u52A0\u57614" },
+  { ip: "188.114.96.6", port: 1701, tag: "AWG-\u65B0\u52A0\u57615" },
+  { ip: "188.114.99.25", port: 4500, tag: "AWG-\u65B0\u52A0\u57616" }
 ];
 var V4 = ["162.159.198.1", "162.159.198.2", "162.159.199.1", "162.159.199.2"];
 var V6 = [
