@@ -76,8 +76,7 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
 
   const gs2 = [...y.matchAll(/^  - name: (.+)$/gm)].map(m => m[1]);
   t("Proton线路 是 select 组", /- name: Proton线路\n    type: select/.test(y));
-  t("按国家分组仅含日本", gs2.includes("Proton-日本") && !gs2.includes("Proton-美国"));
-  t("有自动选择组", gs2.includes("Proton-自动"));
+  t("Proton 不含自动测速组 (单会话保护)", !gs2.includes("Proton-自动"));
 
   const jp = y.split("  - name: Proton-日本")[1].split("\n  - name:")[0];
   t("国家组只含该国节点",
@@ -241,9 +240,9 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     rJpOnly.yaml.includes("- name: 日本1\n") &&
     rJpOnly.yaml.includes("- name: 日本2\n") &&
     rJpOnly.yaml.includes("- name: 日本3\n"));
-  t("生成大区组 Proton-日本 及 Proton-日本-自动",
+  t("生成大区组 Proton-日本 (无自动测速组)",
     rJpOnly.yaml.includes("- name: Proton-日本\n") &&
-    rJpOnly.yaml.includes("- name: Proton-日本-自动\n"));
+    !rJpOnly.yaml.includes("- name: Proton-日本-自动\n"));
 
   // 2. 选日本与新加坡：验证排序整洁不乱序穿插
   const rBoth = buildConfig(warp, opera, messyProton, null, {

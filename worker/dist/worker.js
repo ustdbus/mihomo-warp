@@ -1019,17 +1019,7 @@ ${q(tags)}`).join("\n\n");
     ([srvName, names]) => `  - name: ${srvName}
     type: select
     proxies:
-      - ${srvName}-\u81EA\u52A8\u4F18\u9009
-${p(names)}
-
-  - name: ${srvName}-\u81EA\u52A8\u4F18\u9009
-    type: url-test
-    url: http://cp.cloudflare.com/generate_204
-    interval: 86400
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(names)}`
+${p(names)}`
   ).join("\n\n");
   const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
   const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => {
@@ -1037,17 +1027,7 @@ ${q(names)}`
     return `  - name: Proton-${cc}
     type: select
     proxies:
-      - Proton-${cc}-\u81EA\u52A8
-${p(matchedServers.length ? matchedServers : names)}
-
-  - name: Proton-${cc}-\u81EA\u52A8
-    type: url-test
-    url: http://cp.cloudflare.com/generate_204
-    interval: 86400
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(names)}`;
+${p(matchedServers.length ? matchedServers : names)}`;
   }).join("\n\n");
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
@@ -1118,18 +1098,8 @@ ${q(entries)}
   - name: Proton\u7EBF\u8DEF
     type: select
     proxies:
-      - Proton-\u81EA\u52A8
 ${p(protonCCNames)}
 ${p(serverGroupNames)}
-
-  - name: Proton-\u81EA\u52A8
-    type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(protonNames)}
 
 ${protonCCDefs}
 

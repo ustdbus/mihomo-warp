@@ -550,22 +550,13 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     proxies:
 ${q(tags)}`).join("\n\n");
 
+  // 核心保护：Proton 官方免费账号严格限制单设备会话，禁止任何 url-test 并发测速轰炸。落地策略组直接为纯 select 模式。
   const serverGroupNames = Object.keys(protonByServer);
   const serverGroupDefs = Object.entries(protonByServer).map(([srvName, names]) =>
     `  - name: ${srvName}
     type: select
     proxies:
-      - ${srvName}-自动优选
-${p(names)}
-
-  - name: ${srvName}-自动优选
-    type: url-test
-    url: http://cp.cloudflare.com/generate_204
-    interval: 86400
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(names)}`
+${p(names)}`
   ).join("\n\n");
 
   const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
@@ -574,17 +565,7 @@ ${q(names)}`
     return `  - name: Proton-${cc}
     type: select
     proxies:
-      - Proton-${cc}-自动
-${p(matchedServers.length ? matchedServers : names)}
-
-  - name: Proton-${cc}-自动
-    type: url-test
-    url: http://cp.cloudflare.com/generate_204
-    interval: 86400
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(names)}`;
+${p(matchedServers.length ? matchedServers : names)}`;
   }).join("\n\n");
 
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
@@ -664,18 +645,8 @@ ${q(entries)}
   - name: Proton线路
     type: select
     proxies:
-      - Proton-自动
 ${p(protonCCNames)}
 ${p(serverGroupNames)}
-
-  - name: Proton-自动
-    type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 80
-    lazy: true
-    proxies:
-${q(protonNames)}
 
 ${protonCCDefs}
 
