@@ -246,37 +246,35 @@ export async function fetchVpnGate() {
   const regionsSummary = {};
 
   for (const [reg, allList] of Object.entries(allByCountry)) {
-    // 每个国家按速度降序精选前 3 个优质节点（若不足 3 个则全取）
-    const list = allList.slice(0, 3);
-    const cc = allList[0]?.cc || "";
+    // 每个国家按测速最高优选 1 台顶级落地出口（对应生成 20 个套娃节点）
+    const best = allList[0];
+    const cc = best?.cc || "";
     const flag = COUNTRY_FLAG_MAP[reg] || getFlagEmoji(cc);
 
     regionsSummary[reg] = {
       country: reg,
       cc,
       flag,
-      count: allList.length,        // 真实总抓取台数（如日本 58 台、韩国 25 台）
-      totalCount: allList.length,   // 别名
-      selectedCount: list.length,   // 精选启用台数（3台）
-      maxSpeedMbps: +(allList[0]?.speed / 1e6 || 0).toFixed(1),
+      count: allList.length,        // 该国可用节点总数（如日本 58 台）
+      totalCount: allList.length,
+      selectedCount: 1,             // 优选出口台数（1台）
+      maxSpeedMbps: +(best?.speed / 1e6 || 0).toFixed(1),
     };
 
-    list.forEach((n, idx) => {
-      servers.push({
-        name: `VG-${reg}${idx + 1}`,
-        country: reg,
-        cc: n.cc,
-        ip: n.ip,
-        port: n.port,
-        proto: n.proto,
-        speedMbps: +(n.speed / 1e6).toFixed(1),
-        ping: n.ping,
-        cipher: n.cipher,
-        auth: n.auth,
-        ca: n.ca,
-        cert: n.cert,
-        key: n.key,
-      });
+    servers.push({
+      name: `VG-${reg}`,
+      country: reg,
+      cc: best.cc,
+      ip: best.ip,
+      port: best.port,
+      proto: best.proto,
+      speedMbps: +(best.speed / 1e6).toFixed(1),
+      ping: best.ping,
+      cipher: best.cipher,
+      auth: best.auth,
+      ca: best.ca,
+      cert: best.cert,
+      key: best.key,
     });
   }
 

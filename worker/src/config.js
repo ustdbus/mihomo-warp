@@ -642,9 +642,11 @@ ${q(names)}`).join("\n\n");
 
   if (enableVpnGate && vpngate && Array.isArray(vpngate.servers)) {
     const selectedRegions = new Set(vpngateRegions);
+    const seenCountry = new Set();
     for (const s of vpngate.servers) {
-      if (selectedRegions.has(s.country) || selectedRegions.has(s.cc)) {
+      if ((selectedRegions.has(s.country) || selectedRegions.has(s.cc)) && !seenCountry.has(s.country)) {
         targetVgServers.push(s);
+        seenCountry.add(s.country);
       }
     }
   }

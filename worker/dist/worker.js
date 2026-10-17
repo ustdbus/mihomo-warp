@@ -1098,9 +1098,11 @@ ${q(names)}`).join("\n\n");
   const targetVgServers = [];
   if (enableVpnGate && vpngate && Array.isArray(vpngate.servers)) {
     const selectedRegions = new Set(vpngateRegions);
+    const seenCountry = /* @__PURE__ */ new Set();
     for (const s of vpngate.servers) {
-      if (selectedRegions.has(s.country) || selectedRegions.has(s.cc)) {
+      if ((selectedRegions.has(s.country) || selectedRegions.has(s.cc)) && !seenCountry.has(s.country)) {
         targetVgServers.push(s);
+        seenCountry.add(s.country);
       }
     }
   }
@@ -1586,37 +1588,34 @@ async function fetchVpnGate() {
   const servers = [];
   const regionsSummary = {};
   for (const [reg, allList] of Object.entries(allByCountry)) {
-    const list = allList.slice(0, 3);
-    const cc = allList[0]?.cc || "";
+    const best = allList[0];
+    const cc = best?.cc || "";
     const flag = COUNTRY_FLAG_MAP[reg] || getFlagEmoji(cc);
     regionsSummary[reg] = {
       country: reg,
       cc,
       flag,
       count: allList.length,
-      // 真实总抓取台数（如日本 58 台、韩国 25 台）
+      // 该国可用节点总数（如日本 58 台）
       totalCount: allList.length,
-      // 别名
-      selectedCount: list.length,
-      // 精选启用台数（3台）
-      maxSpeedMbps: +(allList[0]?.speed / 1e6 || 0).toFixed(1)
+      selectedCount: 1,
+      // 优选出口台数（1台）
+      maxSpeedMbps: +(best?.speed / 1e6 || 0).toFixed(1)
     };
-    list.forEach((n, idx) => {
-      servers.push({
-        name: `VG-${reg}${idx + 1}`,
-        country: reg,
-        cc: n.cc,
-        ip: n.ip,
-        port: n.port,
-        proto: n.proto,
-        speedMbps: +(n.speed / 1e6).toFixed(1),
-        ping: n.ping,
-        cipher: n.cipher,
-        auth: n.auth,
-        ca: n.ca,
-        cert: n.cert,
-        key: n.key
-      });
+    servers.push({
+      name: `VG-${reg}`,
+      country: reg,
+      cc: best.cc,
+      ip: best.ip,
+      port: best.port,
+      proto: best.proto,
+      speedMbps: +(best.speed / 1e6).toFixed(1),
+      ping: best.ping,
+      cipher: best.cipher,
+      auth: best.auth,
+      ca: best.ca,
+      cert: best.cert,
+      key: best.key
     });
   }
   return {
