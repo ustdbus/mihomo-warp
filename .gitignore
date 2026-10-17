@@ -23,4 +23,5 @@ worker/test_*
 worker/setup_mihomo.sh
 worker/*.py
 worker/*.yaml
+test_vps_verify.py
 

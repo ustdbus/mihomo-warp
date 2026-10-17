@@ -75,7 +75,9 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   t("Proton 节点不带隧道内 DNS", !/10\.2\.0\.1/.test(y));
 
   const gs2 = [...y.matchAll(/^  - name: (.+)$/gm)].map(m => m[1]);
-  t("Proton线路 是 select 组", /- name: Proton线路\n    type: select/.test(y));
+  t("Proton-日本 是 select 组", /- name: Proton-日本\n    type: select/.test(y));
+  t("Proton 相关仅保留 Proton-国家/地区，不含 Proton线路 顶层组", !gs2.includes("Proton线路"));
+  t("不含单服务器独立策略组 (如 日本1)", !gs2.includes("日本1"));
   t("Proton 不含自动测速组 (单会话保护)", !gs2.includes("Proton-自动"));
 
   const jp = y.split("  - name: Proton-日本")[1].split("\n  - name:")[0];
@@ -236,13 +238,15 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     !rJpOnly.yaml.includes("Proton-美国") &&
     !rJpOnly.yaml.includes("美国1") &&
     !/新加坡\d+@/.test(rJpOnly.yaml));
-  t("生成日本专属独立策略组 日本1、日本2、日本3",
-    rJpOnly.yaml.includes("- name: 日本1\n") &&
-    rJpOnly.yaml.includes("- name: 日本2\n") &&
-    rJpOnly.yaml.includes("- name: 日本3\n"));
-  t("生成大区组 Proton-日本 (无自动测速组)",
+  t("策略组只保留 Proton-日本，无独立日本1/2/3组",
     rJpOnly.yaml.includes("- name: Proton-日本\n") &&
-    !rJpOnly.yaml.includes("- name: Proton-日本-自动\n"));
+    !rJpOnly.yaml.includes("- name: 日本1\n") &&
+    !rJpOnly.yaml.includes("- name: 日本2\n") &&
+    !rJpOnly.yaml.includes("- name: 日本3\n"));
+  t("Proton-日本 组直接包含该国套娃节点",
+    rJpOnly.yaml.includes("日本1@") &&
+    rJpOnly.yaml.includes("日本2@") &&
+    rJpOnly.yaml.includes("日本3@"));
 
   // 2. 选日本与新加坡：验证排序整洁不乱序穿插
   const rBoth = buildConfig(warp, opera, messyProton, null, {
@@ -250,13 +254,11 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     protonRegions: ["日本", "新加坡"],
   });
   t("多选时落地服务器为 5 台", rBoth.protonServers === 5);
-  const posJp1 = rBoth.yaml.indexOf("- name: 日本1\n");
-  const posJp2 = rBoth.yaml.indexOf("- name: 日本2\n");
-  const posJp3 = rBoth.yaml.indexOf("- name: 日本3\n");
-  const posSg1 = rBoth.yaml.indexOf("- name: 新加坡1\n");
-  const posSg2 = rBoth.yaml.indexOf("- name: 新加坡2\n");
-  t("按国家与编号有序排列 (日本1 < 日本2 < 日本3 < 新加坡1 < 新加坡2)",
-    posJp1 < posJp2 && posJp2 < posJp3 && posJp3 < posSg1 && posSg1 < posSg2);
+  t("策略组仅保留 Proton-日本 与 Proton-新加坡",
+    rBoth.yaml.includes("- name: Proton-日本\n") &&
+    rBoth.yaml.includes("- name: Proton-新加坡\n") &&
+    !rBoth.yaml.includes("- name: 日本1\n") &&
+    !rBoth.yaml.includes("- name: 新加坡1\n"));
 
   // 3. 显式清空 (0 地区)
   const rEmpty = buildConfig(warp, opera, messyProton, null, {
@@ -272,10 +274,11 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   });
   t("精准勾选单台落地服务器仅 1 台", rSingle.protonServers === 1);
   t("单台落地时组合节点刚好为 20 个 (20 x 1)", rSingle.proton === 20);
+  t("Proton-日本 策略组直接容纳选中的日本1的 20 个套娃节点，无独立日本1组",
+    rSingle.yaml.includes("- name: Proton-日本\n") &&
+    !rSingle.yaml.includes("- name: 日本1\n"));
   t("生成的订阅只含选中的日本1，不含日本2和日本3",
-    rSingle.yaml.includes("- name: 日本1\n") &&
-    !rSingle.yaml.includes("- name: 日本2\n") &&
-    !rSingle.yaml.includes("- name: 日本3\n") &&
+    rSingle.yaml.includes("日本1@") &&
     !rSingle.yaml.includes("日本2@") &&
     !rSingle.yaml.includes("日本3@") &&
     !rSingle.yaml.includes("Proton-新加坡") &&
@@ -287,12 +290,17 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     protonServers: ["日本1", "新加坡2"],
   });
   t("精准挑选 2 台跨国服务器时落地为 2 台", rCustomTwo.protonServers === 2);
-  t("不包含未选中的日本2/日本3/新加坡1",
-    !rCustomTwo.yaml.includes("- name: 日本2\n") &&
-    !rCustomTwo.yaml.includes("- name: 日本3\n") &&
-    !rCustomTwo.yaml.includes("- name: 新加坡1\n") &&
-    rCustomTwo.yaml.includes("- name: 日本1\n") &&
-    rCustomTwo.yaml.includes("- name: 新加坡2\n"));
+  t("不包含未选中的日本2/日本3/新加坡1节点",
+    !rCustomTwo.yaml.includes("日本2@") &&
+    !rCustomTwo.yaml.includes("日本3@") &&
+    !rCustomTwo.yaml.includes("新加坡1@") &&
+    rCustomTwo.yaml.includes("日本1@") &&
+    rCustomTwo.yaml.includes("新加坡2@"));
+  t("策略组仅保留 Proton-日本 与 Proton-新加坡，无单个服务器策略组",
+    rCustomTwo.yaml.includes("- name: Proton-日本\n") &&
+    rCustomTwo.yaml.includes("- name: Proton-新加坡\n") &&
+    !rCustomTwo.yaml.includes("- name: 日本1\n") &&
+    !rCustomTwo.yaml.includes("- name: 新加坡2\n"));
 }
 
 console.log(`\n通过 ${pass} 失败 ${fail}`);

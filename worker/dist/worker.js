@@ -1050,21 +1050,13 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     lazy: true
     proxies:
 ${q(tags)}`).join("\n\n");
-  const serverGroupNames = Object.keys(protonByServer);
-  const serverGroupDefs = Object.entries(protonByServer).map(
-    ([srvName, names]) => `  - name: ${srvName}
+  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
+  const protonCCDefs = Object.entries(protonByCC).map(
+    ([cc, names]) => `  - name: Proton-${cc}
     type: select
     proxies:
 ${p(names)}`
   ).join("\n\n");
-  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
-  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => {
-    const matchedServers = serverGroupNames.filter((s) => s.startsWith(cc));
-    return `  - name: Proton-${cc}
-    type: select
-    proxies:
-${p(matchedServers.length ? matchedServers : names)}`;
-  }).join("\n\n");
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
     type: url-test
@@ -1084,7 +1076,7 @@ ${q(names)}`).join("\n\n");
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
-  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames, ...serverGroupNames);
+  if (protonNames.length) picks.push(...protonCCNames);
   if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
   const { prov, rules } = buildRules(directIps);
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
@@ -1131,15 +1123,7 @@ ${enableWarpDirect ? `  - name: WARP\u76F4\u8FDE
     proxies:
 ${q(entries)}
 ` : ""}${protonNames.length ? `
-  - name: Proton\u7EBF\u8DEF
-    type: select
-    proxies:
-${p(protonCCNames)}
-${p(serverGroupNames)}
-
 ${protonCCDefs}
-
-${serverGroupDefs}
 ` : ""}${windNames.length ? `
   - name: Windscribe\u7EBF\u8DEF
     type: select
@@ -1427,7 +1411,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   border-radius:3px;cursor:pointer;font-size:12px;transition:.15s;margin:0;
 }
 .server-item:hover{border-color:var(--cyan);background:rgba(0,240,255,.08)}
-.server-item input[type="checkbox"]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
+.server-item input[type="radio"],.server-item input[type="checkbox"]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
 .srv-name{color:var(--cyan);font-weight:500}
 .srv-ip{
   font-family:monospace;font-size:11px;color:var(--mint);
@@ -1599,16 +1583,17 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     const reg = getProtonRegion(srv);
     return currentProtonRegions.includes(reg);
   }
-  let initialSelectedServerCount = 0;
-  const initialActiveRegions = /* @__PURE__ */ new Set();
+  const activeServerByRegion = {};
   if (protonCred && Array.isArray(protonCred.servers)) {
     for (const srv of protonCred.servers) {
-      if (isServerActive(srv)) {
-        initialSelectedServerCount++;
-        initialActiveRegions.add(getProtonRegion(srv));
+      const reg = getProtonRegion(srv);
+      if (isServerActive(srv) && !activeServerByRegion[reg]) {
+        activeServerByRegion[reg] = srv.name;
       }
     }
   }
+  const initialSelectedServerCount = Object.keys(activeServerByRegion).length;
+  const initialActiveRegions = new Set(Object.keys(activeServerByRegion));
   const flagMap = {
     "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
     "\u65B0\u52A0\u5761": "\u{1F1F8}\u{1F1EC}",
@@ -1806,55 +1791,61 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u5F53\u524D\u542F\u7528 ${initialSelectedServerCount} \u53F0\u843D\u5730\uFF09</span></div>
       <div class="row"><span class="k">\u8BC1\u4E66\u5269\u4F59</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} \u5929\uFF08${pExp.toISOString().slice(0, 10)} \u5230\u671F\uFF09</span></div>
       ${sortedRegions.length ? `
-      <div class="row" style="margin-top:14px">
-        <span class="k">\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u53EF\u5C55\u5F00\u52FE\u9009\u5355\u4E2A\u670D\u52A1\u5668 IP\uFF09</span>
+      <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleRegionListExpand(event)">
+        <span class="k" style="display:flex;align-items:center;gap:8px">
+          <span>\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u5355\u9009\u843D\u5730 IP\uFF09</span>
+          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">\u6536\u8D77\u5217\u8868 \u25B2</span>
+        </span>
         <span class="v ok" id="proton_summary">\u5DF2\u52FE\u9009 ${initialActiveRegions.size} \u4E2A\u5730\u533A (${initialSelectedServerCount} \u53F0\u670D\u52A1\u5668)</span>
       </div>
-      <div class="region-list" style="margin:10px 0">
-        ${sortedRegions.map((reg) => {
+      <div id="proton_regions_wrapper">
+        <div class="region-list" style="margin:10px 0">
+          ${sortedRegions.map((reg) => {
     const srvList = protonServersMap[reg];
     const totalCount = srvList.length;
-    const checkedCount = srvList.filter(isServerActive).length;
-    const isAllChecked = checkedCount === totalCount && totalCount > 0;
+    const chosenServer = activeServerByRegion[reg];
+    const isChecked = Boolean(chosenServer);
     const flag = flagMap[reg] || "\u{1F310}";
     return `
-          <div class="region-card ${checkedCount > 0 ? "active" : ""}" id="card_${reg}">
-            <div class="region-header" onclick="handleCardClick(event, '${reg}')">
-              <label class="region-main" onclick="event.stopPropagation()">
-                <input type="checkbox" class="region-master-cb" data-region="${reg}"
-                       ${isAllChecked ? "checked" : ""}
-                       onchange="onRegionMasterChange('${reg}', this.checked)">
-                <span class="region-title">${flag} ${reg}</span>
-                <span class="region-tag" id="tag_${reg}">${checkedCount}/${totalCount}\u53F0</span>
-              </label>
-              <button type="button" class="btn-exp" id="btn_exp_${reg}" onclick="toggleRegionExpand('${reg}', event)">
-                \u5C55\u5F00 \u25BC
-              </button>
-            </div>
-            <div class="server-drawer" id="drawer_${reg}" style="display:none">
-              <div class="server-list">
-                ${srvList.map((srv) => {
-      const checked = isServerActive(srv);
-      return `
-                  <label class="server-item">
-                    <input type="checkbox" name="proton_server" value="${srv.name}"
-                           data-region="${reg}" data-ip="${srv.ip}"
-                           ${checked ? "checked" : ""}
-                           onchange="onServerChange('${reg}')">
-                    <span class="srv-name">${srv.name}</span>
-                    <span class="srv-ip">${srv.ip}</span>
-                  </label>`;
-    }).join("")}
+            <div class="region-card ${isChecked ? "active" : ""}" id="card_${reg}">
+              <div class="region-header" onclick="handleCardClick(event, '${reg}')">
+                <label class="region-main" onclick="event.stopPropagation()">
+                  <input type="checkbox" class="region-master-cb" data-region="${reg}"
+                         ${isChecked ? "checked" : ""}
+                         onchange="onRegionMasterChange('${reg}', this.checked)">
+                  <span class="region-title">${flag} ${reg}</span>
+                  <span class="region-tag" id="tag_${reg}">${isChecked ? 1 : 0}/${totalCount}\u53F0</span>
+                </label>
+                <button type="button" class="btn-exp" id="btn_exp_${reg}" onclick="toggleRegionExpand('${reg}', event)">
+                  \u5C55\u5F00 \u25BC
+                </button>
               </div>
-            </div>
-          </div>`;
+              <div class="server-drawer" id="drawer_${reg}" style="display:none">
+                <div class="server-list">
+                  ${srvList.map((srv) => {
+      const checked = srv.name === chosenServer;
+      return `
+                    <label class="server-item">
+                      <input type="radio" name="proton_server_${reg}" value="${srv.name}"
+                             data-region="${reg}" data-ip="${srv.ip}"
+                             data-waschecked="${checked ? "true" : "false"}"
+                             ${checked ? "checked" : ""}
+                             onclick="onServerRadioClick(this, '${reg}')">
+                      <span class="srv-name">${srv.name}</span>
+                      <span class="srv-ip">${srv.ip}</span>
+                    </label>`;
+    }).join("")}
+                </div>
+              </div>
+            </div>`;
   }).join("")}
-      </div>
-      <div class="sub" style="margin-bottom:12px">
-        <button onclick="saveProtonRegions()">\u5E94\u7528\u6240\u9009\u5730\u533A\u4E0E\u670D\u52A1\u5668</button>
-        <button class="gh" type="button" onclick="selectProtonAsia()">\u4EC5\u4E9A\u592A(\u65E5\u672C/\u65B0\u52A0\u5761)</button>
-        <button class="gh" type="button" onclick="toggleProtonAll(true)">\u5168\u9009</button>
-        <button class="gh" type="button" onclick="toggleProtonAll(false)">\u6E05\u7A7A</button>
+        </div>
+        <div class="sub" style="margin-bottom:12px">
+          <button onclick="saveProtonRegions()">\u5E94\u7528\u6240\u9009\u5730\u533A\u4E0E\u670D\u52A1\u5668</button>
+          <button class="gh" type="button" onclick="selectProtonAsia()">\u4EC5\u4E9A\u592A(\u65E5\u672C/\u65B0\u52A0\u5761)</button>
+          <button class="gh" type="button" onclick="toggleProtonAll(true)">\u5168\u9009(\u5404\u90091\u53F0)</button>
+          <button class="gh" type="button" onclick="toggleProtonAll(false)">\u6E05\u7A7A</button>
+        </div>
       </div>
       ` : ""}
       ` : `
@@ -1993,47 +1984,73 @@ function handleCardClick(e, reg){
   }
 }
 
-function onRegionMasterChange(reg, checked){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
-  srvBoxes.forEach(b => b.checked = checked);
+function toggleRegionListExpand(e){
+  if(e && e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+  const wrap = document.getElementById('proton_regions_wrapper');
+  const btn = document.getElementById('btn_toggle_list');
+  if(!wrap) return;
+  const isHidden = (wrap.style.display === 'none');
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if(btn) btn.textContent = isHidden ? '\u6536\u8D77\u5217\u8868 \u25B2' : '\u5C55\u5F00\u5217\u8868 \u25BC';
+}
+
+function onServerRadioClick(radio, reg){
+  if(radio.dataset.waschecked === 'true'){
+    radio.checked = false;
+    radio.dataset.waschecked = 'false';
+  } else {
+    document.querySelectorAll('input[name="proton_server_' + reg + '"]').forEach(r => r.dataset.waschecked = 'false');
+    radio.dataset.waschecked = 'true';
+  }
   updateRegionUI(reg);
   updateStats();
 }
 
-function onServerChange(reg){
+function onRegionMasterChange(reg, checked){
+  const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+  if(!checked){
+    radios.forEach(r => { r.checked = false; r.dataset.waschecked = 'false'; });
+  } else {
+    let hasOne = false;
+    radios.forEach(r => { if(r.checked) hasOne = true; });
+    if(!hasOne && radios.length > 0){
+      radios[0].checked = true;
+      radios[0].dataset.waschecked = 'true';
+    }
+  }
   updateRegionUI(reg);
   updateStats();
 }
 
 function updateRegionUI(reg){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
+  const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
   const masterBox = document.querySelector('.region-master-cb[data-region="' + reg + '"]');
   const tag = document.getElementById('tag_' + reg);
   const card = document.getElementById('card_' + reg);
-  const total = srvBoxes.length;
+  const total = radios.length;
   let checked = 0;
-  srvBoxes.forEach(b => { if(b.checked) checked++; });
+  radios.forEach(r => { if(r.checked) checked++; });
 
   if(masterBox){
-    masterBox.checked = (checked === total && total > 0);
-    masterBox.indeterminate = (checked > 0 && checked < total);
+    masterBox.checked = checked > 0;
+    masterBox.indeterminate = false;
   }
   if(tag) tag.textContent = checked + '/' + total + '\u53F0';
   if(card) card.classList.toggle('active', checked > 0);
 }
 
 function updateStats(){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const checkedRadios = document.querySelectorAll('input[type="radio"][data-region]:checked');
   const activeRegions = new Set();
-  srvBoxes.forEach(b => activeRegions.add(b.getAttribute('data-region')));
+  checkedRadios.forEach(r => activeRegions.add(r.getAttribute('data-region')));
   const summary = document.getElementById('proton_summary');
   if(summary){
-    summary.textContent = '\u5DF2\u52FE\u9009 ' + activeRegions.size + ' \u4E2A\u5730\u533A (' + srvBoxes.length + ' \u53F0\u670D\u52A1\u5668)';
+    summary.textContent = '\u5DF2\u52FE\u9009 ' + activeRegions.size + ' \u4E2A\u5730\u533A (' + checkedRadios.length + ' \u53F0\u670D\u52A1\u5668)';
   }
 }
 
 function saveProtonRegions(){
-  const boxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const boxes = document.querySelectorAll('input[type="radio"][data-region]:checked');
   const servers = Array.from(boxes).map(b => b.value);
   const regions = Array.from(new Set(Array.from(boxes).map(b => b.getAttribute('data-region'))));
   if(servers.length === 0){
@@ -2043,21 +2060,27 @@ function saveProtonRegions(){
 }
 
 function selectProtonAsia(){
-  document.querySelectorAll('input[name="proton_server"]').forEach(b => {
-    const reg = b.getAttribute('data-region');
-    b.checked = (reg === "\u65E5\u672C" || reg === "\u65B0\u52A0\u5761");
-  });
   document.querySelectorAll('.region-master-cb').forEach(m => {
     const reg = m.getAttribute('data-region');
+    const isAsia = (reg === "\u65E5\u672C" || reg === "\u65B0\u52A0\u5761");
+    const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+    radios.forEach((r, idx) => {
+      r.checked = isAsia && (idx === 0);
+      r.dataset.waschecked = r.checked ? 'true' : 'false';
+    });
     updateRegionUI(reg);
   });
   updateStats();
 }
 
 function toggleProtonAll(checked){
-  document.querySelectorAll('input[name="proton_server"]').forEach(b => b.checked = checked);
   document.querySelectorAll('.region-master-cb').forEach(m => {
     const reg = m.getAttribute('data-region');
+    const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+    radios.forEach((r, idx) => {
+      r.checked = checked && (idx === 0);
+      r.dataset.waschecked = r.checked ? 'true' : 'false';
+    });
     updateRegionUI(reg);
   });
   updateStats();

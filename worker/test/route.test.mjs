@@ -363,10 +363,10 @@ t("新密码能登上",
     Array.isArray(savedSettings.protonRegions) && savedSettings.protonRegions[0] === "日本" &&
     Array.isArray(savedSettings.protonServers) && savedSettings.protonServers[0] === "日本1");
 
-  // 2. 检查首页渲染中是否包含单台服务器与抽屉复选框
+  // 2. 检查首页渲染中是否包含单台服务器单选框与 IP
   const page = await (await worker.fetch(req("/", { headers: a7 }), env)).text();
-  t("首页渲染中包含可展开服务器复选框与 IP",
-    page.includes('name="proton_server" value="日本1"') &&
+  t("首页渲染中包含可展开服务器单选框与 IP",
+    page.includes('name="proton_server_日本" value="日本1"') &&
     page.includes('1.1.1.1'));
 }
 

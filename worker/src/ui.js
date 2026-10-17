@@ -113,7 +113,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   border-radius:3px;cursor:pointer;font-size:12px;transition:.15s;margin:0;
 }
 .server-item:hover{border-color:var(--cyan);background:rgba(0,240,255,.08)}
-.server-item input[type="checkbox"]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
+.server-item input[type="radio"],.server-item input[type="checkbox"]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
 .srv-name{color:var(--cyan);font-weight:500}
 .srv-ip{
   font-family:monospace;font-size:11px;color:var(--mint);
@@ -306,16 +306,19 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     return currentProtonRegions.includes(reg);
   }
 
-  let initialSelectedServerCount = 0;
-  const initialActiveRegions = new Set();
+  // 保证每个国家最多只选一台服务器（单选互斥）
+  const activeServerByRegion = {};
   if (protonCred && Array.isArray(protonCred.servers)) {
     for (const srv of protonCred.servers) {
-      if (isServerActive(srv)) {
-        initialSelectedServerCount++;
-        initialActiveRegions.add(getProtonRegion(srv));
+      const reg = getProtonRegion(srv);
+      if (isServerActive(srv) && !activeServerByRegion[reg]) {
+        activeServerByRegion[reg] = srv.name;
       }
     }
   }
+
+  const initialSelectedServerCount = Object.keys(activeServerByRegion).length;
+  const initialActiveRegions = new Set(Object.keys(activeServerByRegion));
 
   const flagMap = {
     "日本": "🇯🇵",
@@ -518,55 +521,61 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       <div class="row"><span class="k">状态</span><span class="v ok">已配置 ${protonCred.servers.length} 台（当前启用 ${initialSelectedServerCount} 台落地）</span></div>
       <div class="row"><span class="k">证书剩余</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} 天（${pExp.toISOString().slice(0, 10)} 到期）</span></div>
       ${sortedRegions.length ? `
-      <div class="row" style="margin-top:14px">
-        <span class="k">落地国家/地区选择（可展开勾选单个服务器 IP）</span>
+      <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleRegionListExpand(event)">
+        <span class="k" style="display:flex;align-items:center;gap:8px">
+          <span>落地国家/地区选择（单选落地 IP）</span>
+          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">收起列表 ▲</span>
+        </span>
         <span class="v ok" id="proton_summary">已勾选 ${initialActiveRegions.size} 个地区 (${initialSelectedServerCount} 台服务器)</span>
       </div>
-      <div class="region-list" style="margin:10px 0">
-        ${sortedRegions.map((reg) => {
-          const srvList = protonServersMap[reg];
-          const totalCount = srvList.length;
-          const checkedCount = srvList.filter(isServerActive).length;
-          const isAllChecked = checkedCount === totalCount && totalCount > 0;
-          const flag = flagMap[reg] || "🌐";
-          return `
-          <div class="region-card ${checkedCount > 0 ? 'active' : ''}" id="card_${reg}">
-            <div class="region-header" onclick="handleCardClick(event, '${reg}')">
-              <label class="region-main" onclick="event.stopPropagation()">
-                <input type="checkbox" class="region-master-cb" data-region="${reg}"
-                       ${isAllChecked ? "checked" : ""}
-                       onchange="onRegionMasterChange('${reg}', this.checked)">
-                <span class="region-title">${flag} ${reg}</span>
-                <span class="region-tag" id="tag_${reg}">${checkedCount}/${totalCount}台</span>
-              </label>
-              <button type="button" class="btn-exp" id="btn_exp_${reg}" onclick="toggleRegionExpand('${reg}', event)">
-                展开 ▼
-              </button>
-            </div>
-            <div class="server-drawer" id="drawer_${reg}" style="display:none">
-              <div class="server-list">
-                ${srvList.map((srv) => {
-                  const checked = isServerActive(srv);
-                  return `
-                  <label class="server-item">
-                    <input type="checkbox" name="proton_server" value="${srv.name}"
-                           data-region="${reg}" data-ip="${srv.ip}"
-                           ${checked ? "checked" : ""}
-                           onchange="onServerChange('${reg}')">
-                    <span class="srv-name">${srv.name}</span>
-                    <span class="srv-ip">${srv.ip}</span>
-                  </label>`;
-                }).join("")}
+      <div id="proton_regions_wrapper">
+        <div class="region-list" style="margin:10px 0">
+          ${sortedRegions.map((reg) => {
+            const srvList = protonServersMap[reg];
+            const totalCount = srvList.length;
+            const chosenServer = activeServerByRegion[reg];
+            const isChecked = Boolean(chosenServer);
+            const flag = flagMap[reg] || "🌐";
+            return `
+            <div class="region-card ${isChecked ? 'active' : ''}" id="card_${reg}">
+              <div class="region-header" onclick="handleCardClick(event, '${reg}')">
+                <label class="region-main" onclick="event.stopPropagation()">
+                  <input type="checkbox" class="region-master-cb" data-region="${reg}"
+                         ${isChecked ? "checked" : ""}
+                         onchange="onRegionMasterChange('${reg}', this.checked)">
+                  <span class="region-title">${flag} ${reg}</span>
+                  <span class="region-tag" id="tag_${reg}">${isChecked ? 1 : 0}/${totalCount}台</span>
+                </label>
+                <button type="button" class="btn-exp" id="btn_exp_${reg}" onclick="toggleRegionExpand('${reg}', event)">
+                  展开 ▼
+                </button>
               </div>
-            </div>
-          </div>`;
-        }).join("")}
-      </div>
-      <div class="sub" style="margin-bottom:12px">
-        <button onclick="saveProtonRegions()">应用所选地区与服务器</button>
-        <button class="gh" type="button" onclick="selectProtonAsia()">仅亚太(日本/新加坡)</button>
-        <button class="gh" type="button" onclick="toggleProtonAll(true)">全选</button>
-        <button class="gh" type="button" onclick="toggleProtonAll(false)">清空</button>
+              <div class="server-drawer" id="drawer_${reg}" style="display:none">
+                <div class="server-list">
+                  ${srvList.map((srv) => {
+                    const checked = (srv.name === chosenServer);
+                    return `
+                    <label class="server-item">
+                      <input type="radio" name="proton_server_${reg}" value="${srv.name}"
+                             data-region="${reg}" data-ip="${srv.ip}"
+                             data-waschecked="${checked ? 'true' : 'false'}"
+                             ${checked ? "checked" : ""}
+                             onclick="onServerRadioClick(this, '${reg}')">
+                      <span class="srv-name">${srv.name}</span>
+                      <span class="srv-ip">${srv.ip}</span>
+                    </label>`;
+                  }).join("")}
+                </div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="sub" style="margin-bottom:12px">
+          <button onclick="saveProtonRegions()">应用所选地区与服务器</button>
+          <button class="gh" type="button" onclick="selectProtonAsia()">仅亚太(日本/新加坡)</button>
+          <button class="gh" type="button" onclick="toggleProtonAll(true)">全选(各选1台)</button>
+          <button class="gh" type="button" onclick="toggleProtonAll(false)">清空</button>
+        </div>
       </div>
       ` : ""}
       ` : `
@@ -702,47 +711,73 @@ function handleCardClick(e, reg){
   }
 }
 
-function onRegionMasterChange(reg, checked){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
-  srvBoxes.forEach(b => b.checked = checked);
+function toggleRegionListExpand(e){
+  if(e && e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+  const wrap = document.getElementById('proton_regions_wrapper');
+  const btn = document.getElementById('btn_toggle_list');
+  if(!wrap) return;
+  const isHidden = (wrap.style.display === 'none');
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if(btn) btn.textContent = isHidden ? '收起列表 ▲' : '展开列表 ▼';
+}
+
+function onServerRadioClick(radio, reg){
+  if(radio.dataset.waschecked === 'true'){
+    radio.checked = false;
+    radio.dataset.waschecked = 'false';
+  } else {
+    document.querySelectorAll('input[name="proton_server_' + reg + '"]').forEach(r => r.dataset.waschecked = 'false');
+    radio.dataset.waschecked = 'true';
+  }
   updateRegionUI(reg);
   updateStats();
 }
 
-function onServerChange(reg){
+function onRegionMasterChange(reg, checked){
+  const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+  if(!checked){
+    radios.forEach(r => { r.checked = false; r.dataset.waschecked = 'false'; });
+  } else {
+    let hasOne = false;
+    radios.forEach(r => { if(r.checked) hasOne = true; });
+    if(!hasOne && radios.length > 0){
+      radios[0].checked = true;
+      radios[0].dataset.waschecked = 'true';
+    }
+  }
   updateRegionUI(reg);
   updateStats();
 }
 
 function updateRegionUI(reg){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
+  const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
   const masterBox = document.querySelector('.region-master-cb[data-region="' + reg + '"]');
   const tag = document.getElementById('tag_' + reg);
   const card = document.getElementById('card_' + reg);
-  const total = srvBoxes.length;
+  const total = radios.length;
   let checked = 0;
-  srvBoxes.forEach(b => { if(b.checked) checked++; });
+  radios.forEach(r => { if(r.checked) checked++; });
 
   if(masterBox){
-    masterBox.checked = (checked === total && total > 0);
-    masterBox.indeterminate = (checked > 0 && checked < total);
+    masterBox.checked = checked > 0;
+    masterBox.indeterminate = false;
   }
   if(tag) tag.textContent = checked + '/' + total + '台';
   if(card) card.classList.toggle('active', checked > 0);
 }
 
 function updateStats(){
-  const srvBoxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const checkedRadios = document.querySelectorAll('input[type="radio"][data-region]:checked');
   const activeRegions = new Set();
-  srvBoxes.forEach(b => activeRegions.add(b.getAttribute('data-region')));
+  checkedRadios.forEach(r => activeRegions.add(r.getAttribute('data-region')));
   const summary = document.getElementById('proton_summary');
   if(summary){
-    summary.textContent = '已勾选 ' + activeRegions.size + ' 个地区 (' + srvBoxes.length + ' 台服务器)';
+    summary.textContent = '已勾选 ' + activeRegions.size + ' 个地区 (' + checkedRadios.length + ' 台服务器)';
   }
 }
 
 function saveProtonRegions(){
-  const boxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const boxes = document.querySelectorAll('input[type="radio"][data-region]:checked');
   const servers = Array.from(boxes).map(b => b.value);
   const regions = Array.from(new Set(Array.from(boxes).map(b => b.getAttribute('data-region'))));
   if(servers.length === 0){
@@ -752,21 +787,27 @@ function saveProtonRegions(){
 }
 
 function selectProtonAsia(){
-  document.querySelectorAll('input[name="proton_server"]').forEach(b => {
-    const reg = b.getAttribute('data-region');
-    b.checked = (reg === "日本" || reg === "新加坡");
-  });
   document.querySelectorAll('.region-master-cb').forEach(m => {
     const reg = m.getAttribute('data-region');
+    const isAsia = (reg === "日本" || reg === "新加坡");
+    const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+    radios.forEach((r, idx) => {
+      r.checked = isAsia && (idx === 0);
+      r.dataset.waschecked = r.checked ? 'true' : 'false';
+    });
     updateRegionUI(reg);
   });
   updateStats();
 }
 
 function toggleProtonAll(checked){
-  document.querySelectorAll('input[name="proton_server"]').forEach(b => b.checked = checked);
   document.querySelectorAll('.region-master-cb').forEach(m => {
     const reg = m.getAttribute('data-region');
+    const radios = document.querySelectorAll('input[name="proton_server_' + reg + '"]');
+    radios.forEach((r, idx) => {
+      r.checked = checked && (idx === 0);
+      r.dataset.waschecked = r.checked ? 'true' : 'false';
+    });
     updateRegionUI(reg);
   });
   updateStats();

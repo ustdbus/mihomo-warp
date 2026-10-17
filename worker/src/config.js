@@ -583,23 +583,15 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     proxies:
 ${q(tags)}`).join("\n\n");
 
-  // 核心保护：Proton 官方免费账号严格限制单设备会话，禁止任何 url-test 并发测速轰炸。落地策略组直接为纯 select 模式。
-  const serverGroupNames = Object.keys(protonByServer);
-  const serverGroupDefs = Object.entries(protonByServer).map(([srvName, names]) =>
-    `  - name: ${srvName}
+  // 核心保护：Proton 官方免费账号严格限制单设备会话，禁止任何 url-test 并发测速轰炸。
+  // 策略组仅保留 Proton-国家/地区，直接包含该国家选中的落地节点
+  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
+  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) =>
+    `  - name: Proton-${cc}
     type: select
     proxies:
 ${p(names)}`
   ).join("\n\n");
-
-  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
-  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => {
-    const matchedServers = serverGroupNames.filter((s) => s.startsWith(cc));
-    return `  - name: Proton-${cc}
-    type: select
-    proxies:
-${p(matchedServers.length ? matchedServers : names)}`;
-  }).join("\n\n");
 
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) =>
@@ -622,11 +614,11 @@ ${q(names)}`).join("\n\n");
   if (enableWarpDirect) leafProxies.push(...entries);
   if (leafProxies.length === 0) leafProxies.push(...entries);
 
-  // 整理 🚀 节点选择 包含的组与直连
+  // 整理 🚀 节点选择 包含的组与直连：Proton 相关仅保留 Proton-国家/地区
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP直连");
-  if (protonNames.length) picks.push("Proton线路", ...protonCCNames, ...serverGroupNames);
+  if (protonNames.length) picks.push(...protonCCNames);
   if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
 
   const { prov, rules } = buildRules(directIps);
@@ -675,15 +667,7 @@ ${enableWarpDirect ? `  - name: WARP直连
     proxies:
 ${q(entries)}
 ` : ""}${protonNames.length ? `
-  - name: Proton线路
-    type: select
-    proxies:
-${p(protonCCNames)}
-${p(serverGroupNames)}
-
 ${protonCCDefs}
-
-${serverGroupDefs}
 ` : ""}${windNames.length ? `
   - name: Windscribe线路
     type: select
