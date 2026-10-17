@@ -264,6 +264,35 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     protonRegions: [],
   });
   t("显式清空地区时生成 0 个 Proton 节点", rEmpty.proton === 0 && rEmpty.protonServers === 0);
+
+  // 4. 精确勾选单一服务器 (只选日本1)
+  const rSingle = buildConfig(warp, opera, messyProton, null, {
+    protocolMode: "wg",
+    protonServers: ["日本1"],
+  });
+  t("精准勾选单台落地服务器仅 1 台", rSingle.protonServers === 1);
+  t("单台落地时组合节点刚好为 20 个 (20 x 1)", rSingle.proton === 20);
+  t("生成的订阅只含选中的日本1，不含日本2和日本3",
+    rSingle.yaml.includes("- name: 日本1\n") &&
+    !rSingle.yaml.includes("- name: 日本2\n") &&
+    !rSingle.yaml.includes("- name: 日本3\n") &&
+    !rSingle.yaml.includes("日本2@") &&
+    !rSingle.yaml.includes("日本3@") &&
+    !rSingle.yaml.includes("Proton-新加坡") &&
+    !/新加坡\d+@/.test(rSingle.yaml));
+
+  // 5. 精确跨国挑选服务器 (如 日本1 与 新加坡2)
+  const rCustomTwo = buildConfig(warp, opera, messyProton, null, {
+    protocolMode: "wg",
+    protonServers: ["日本1", "新加坡2"],
+  });
+  t("精准挑选 2 台跨国服务器时落地为 2 台", rCustomTwo.protonServers === 2);
+  t("不包含未选中的日本2/日本3/新加坡1",
+    !rCustomTwo.yaml.includes("- name: 日本2\n") &&
+    !rCustomTwo.yaml.includes("- name: 日本3\n") &&
+    !rCustomTwo.yaml.includes("- name: 新加坡1\n") &&
+    rCustomTwo.yaml.includes("- name: 日本1\n") &&
+    rCustomTwo.yaml.includes("- name: 新加坡2\n"));
 }
 
 console.log(`\n通过 ${pass} 失败 ${fail}`);

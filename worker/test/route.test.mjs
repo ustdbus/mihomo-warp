@@ -354,16 +354,20 @@ t("新密码能登上",
     servers: [{ name: "日本1", cc: "JP", ip: "1.1.1.1", port: 51820, pub: "P" }]
   }));
 
-  // 1. 保存所选地区
-  const rSet = await worker.fetch(post("/api/settings/proton-regions", { regions: ["日本"] }, a7), env);
+  // 1. 保存所选地区与服务器
+  const rSet = await worker.fetch(post("/api/settings/proton-regions", { regions: ["日本"], servers: ["日本1"] }, a7), env);
   const jSet = await rSet.json();
-  t("保存地区成功", rSet.status === 200 && jSet.ok);
+  t("保存地区与服务器成功", rSet.status === 200 && jSet.ok);
   const savedSettings = JSON.parse(kv.get("settings") || "{}");
-  t("settings 正确持久化 protonRegions", Array.isArray(savedSettings.protonRegions) && savedSettings.protonRegions[0] === "日本");
+  t("settings 正确持久化 protonRegions 和 protonServers",
+    Array.isArray(savedSettings.protonRegions) && savedSettings.protonRegions[0] === "日本" &&
+    Array.isArray(savedSettings.protonServers) && savedSettings.protonServers[0] === "日本1");
 
-  // 2. 检查首页渲染中是否保持只勾选日本
+  // 2. 检查首页渲染中是否包含单台服务器与抽屉复选框
   const page = await (await worker.fetch(req("/", { headers: a7 }), env)).text();
-  t("首页渲染中包含已勾选的日本", page.includes('name="proton_region" value="日本" checked'));
+  t("首页渲染中包含可展开服务器复选框与 IP",
+    page.includes('name="proton_server" value="日本1"') &&
+    page.includes('1.1.1.1'));
 }
 
 console.log(`\n通过 ${pass} 失败 ${fail}`);

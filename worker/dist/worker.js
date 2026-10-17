@@ -908,6 +908,18 @@ function getProtonIndex(srv) {
   const match = (srv.name || "").match(/\d+$/);
   return match ? parseInt(match[0], 10) : 999;
 }
+var REGION_ORDER = [
+  "\u65E5\u672C",
+  "\u65B0\u52A0\u5761",
+  "\u7F8E\u56FD",
+  "\u52A0\u62FF\u5927",
+  "\u8377\u5170",
+  "\u745E\u58EB",
+  "\u632A\u5A01",
+  "\u6CE2\u5170",
+  "\u7F57\u9A6C\u5C3C\u4E9A",
+  "\u58A8\u897F\u54E5"
+];
 function buildConfig(warp, opera, proton, wind, options = {}) {
   const protocolMode = options.protocolMode === "wg" ? "wg" : options.protocolMode === "masque" ? "masque" : options.protocolMode ? options.protocolMode : "masque";
   const enableOpera = options.enableOpera !== false;
@@ -917,6 +929,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
   const protonRegions = options.protonRegions || null;
+  const protonServers = options.protonServers || null;
   let entries = [];
   let proxies = [];
   let v4Entries = [];
@@ -950,18 +963,41 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   let protonNames = [];
   const protonByServer = {};
   const protonByCC = {};
-  const selectedRegions = Array.isArray(protonRegions) ? protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
   const targetProtonServers = [];
   if (enableProton && proton && Array.isArray(proton.servers)) {
-    for (const reg of selectedRegions) {
-      const matched = proton.servers.filter((s) => {
-        const r = getProtonRegion(s);
+    if (Array.isArray(protonServers)) {
+      const allowed = new Set(protonServers);
+      for (const s of proton.servers) {
+        const reg = getProtonRegion(s);
         const cc = (s.cc || "").toUpperCase();
-        return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
-      });
-      matched.sort((a, b) => getProtonIndex(a) - getProtonIndex(b));
-      targetProtonServers.push(...matched);
+        if (allowed.has(s.name) || allowed.has(s.ip) || allowed.has(reg) || allowed.has(cc)) {
+          targetProtonServers.push(s);
+        }
+      }
+    } else {
+      const selectedRegions = Array.isArray(protonRegions) ? protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+      for (const reg of selectedRegions) {
+        const matched = proton.servers.filter((s) => {
+          const r = getProtonRegion(s);
+          const cc = (s.cc || "").toUpperCase();
+          return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
+        });
+        targetProtonServers.push(...matched);
+      }
     }
+    targetProtonServers.sort((a, b) => {
+      const regA = getProtonRegion(a);
+      const regB = getProtonRegion(b);
+      if (regA !== regB) {
+        const idxA = REGION_ORDER.indexOf(regA);
+        const idxB = REGION_ORDER.indexOf(regB);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return regA.localeCompare(regB, "zh-CN");
+      }
+      return getProtonIndex(a) - getProtonIndex(b);
+    });
   }
   if (targetProtonServers.length) {
     directIps.push(...targetProtonServers.map((s) => s.ip));
@@ -1355,6 +1391,49 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .radio-row{display:flex;gap:24px;align-items:center;margin:10px 0;font-size:12px}
 .radio-label{display:flex;align-items:center;gap:8px;cursor:pointer}
 .radio-label input[type="radio"]{accent-color:var(--cyan);width:16px;height:16px;cursor:pointer}
+.region-list{display:flex;flex-direction:column;gap:8px}
+.region-card{
+  background:rgba(0,240,255,.02);border:1px solid rgba(0,240,255,.2);
+  border-radius:4px;transition:all .18s ease;overflow:hidden;
+}
+.region-card:hover{border-color:rgba(0,240,255,.45)}
+.region-card.open{border-color:var(--cyan);box-shadow:0 0 10px rgba(0,240,255,.12);background:rgba(0,240,255,.04)}
+.region-card.active{border-color:rgba(255,43,214,.4)}
+.region-card.open.active{border-color:var(--cyan)}
+.region-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:9px 12px;gap:12px;cursor:pointer;user-select:none;
+}
+.region-header:hover{background:rgba(255,43,214,.04)}
+.region-main{display:flex;align-items:center;gap:10px;font-size:13px;flex:1;cursor:pointer;margin:0}
+.region-main input[type="checkbox"]{accent-color:var(--pink);width:16px;height:16px;cursor:pointer}
+.region-title{font-weight:500;color:var(--text)}
+.region-tag{font-size:10px;color:var(--dim);border:1px solid rgba(122,169,196,.35);padding:1px 6px;border-radius:3px}
+.btn-exp{
+  background:transparent;border:1px solid rgba(0,240,255,.3);color:var(--dim);
+  padding:3px 9px;font-size:11px;cursor:pointer;border-radius:3px;transition:.15s;font-family:inherit;
+}
+.btn-exp:hover{color:var(--cyan);border-color:var(--cyan);background:rgba(0,240,255,.1)}
+.server-drawer{
+  border-top:1px dashed rgba(0,240,255,.18);
+  padding:10px 12px;background:rgba(0,0,0,.35);
+}
+.server-list{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;
+}
+.server-item{
+  display:flex;align-items:center;gap:8px;padding:6px 10px;
+  background:rgba(0,240,255,.03);border:1px solid rgba(0,240,255,.16);
+  border-radius:3px;cursor:pointer;font-size:12px;transition:.15s;margin:0;
+}
+.server-item:hover{border-color:var(--cyan);background:rgba(0,240,255,.08)}
+.server-item input[type="checkbox"]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
+.srv-name{color:var(--cyan);font-weight:500}
+.srv-ip{
+  font-family:monospace;font-size:11px;color:var(--mint);
+  background:rgba(0,255,163,.1);padding:1px 5px;border-radius:2px;
+  margin-left:auto;letter-spacing:0;
+}
 `;
 function renderNoKV() {
   return `<!DOCTYPE html>
@@ -1501,14 +1580,35 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
   const gb = (n) => (n / 1073741824).toFixed(2) + " GB";
   const windUsageTxt = windUsage && windUsage.max ? `${gb(windUsage.used)} / ${gb(windUsage.max)}\uFF08${windPct}%\uFF09` : null;
   const pLeft = pExp ? Math.floor((pExp.getTime() - Date.now()) / 864e5) : null;
-  const protonRegionsMap = {};
+  const protonServersMap = {};
   if (protonCred && Array.isArray(protonCred.servers)) {
-    for (const s2 of protonCred.servers) {
-      const reg = s2.name.replace(/\d+$/, "");
-      protonRegionsMap[reg] = (protonRegionsMap[reg] || 0) + 1;
+    for (const srv of protonCred.servers) {
+      const reg = getProtonRegion(srv);
+      (protonServersMap[reg] ||= []).push(srv);
+    }
+    for (const list of Object.values(protonServersMap)) {
+      list.sort((a, b) => getProtonIndex(a) - getProtonIndex(b));
     }
   }
+  const selectedServers = Array.isArray(settings?.protonServers) ? settings.protonServers : Array.isArray(s.features?.protonServers) ? s.features.protonServers : null;
   const currentProtonRegions = Array.isArray(settings?.protonRegions) ? settings.protonRegions : Array.isArray(s.features?.protonRegions) ? s.features.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+  function isServerActive(srv) {
+    if (selectedServers !== null) {
+      return selectedServers.includes(srv.name) || selectedServers.includes(srv.ip);
+    }
+    const reg = getProtonRegion(srv);
+    return currentProtonRegions.includes(reg);
+  }
+  let initialSelectedServerCount = 0;
+  const initialActiveRegions = /* @__PURE__ */ new Set();
+  if (protonCred && Array.isArray(protonCred.servers)) {
+    for (const srv of protonCred.servers) {
+      if (isServerActive(srv)) {
+        initialSelectedServerCount++;
+        initialActiveRegions.add(getProtonRegion(srv));
+      }
+    }
+  }
   const flagMap = {
     "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
     "\u65B0\u52A0\u5761": "\u{1F1F8}\u{1F1EC}",
@@ -1521,8 +1621,7 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     "\u7F57\u9A6C\u5C3C\u4E9A": "\u{1F1F7}\u{1F1F4}",
     "\u58A8\u897F\u54E5": "\u{1F1F2}\u{1F1FD}"
   };
-  const REGION_ORDER = ["\u65E5\u672C", "\u65B0\u52A0\u5761", "\u7F8E\u56FD", "\u52A0\u62FF\u5927", "\u8377\u5170", "\u745E\u58EB", "\u632A\u5A01", "\u6CE2\u5170", "\u7F57\u9A6C\u5C3C\u4E9A", "\u58A8\u897F\u54E5"];
-  const sortedRegionEntries = Object.entries(protonRegionsMap).sort(([a], [b]) => {
+  const sortedRegions = Object.keys(protonServersMap).sort((a, b) => {
     const ia = REGION_ORDER.indexOf(a);
     const ib = REGION_ORDER.indexOf(b);
     if (ia !== -1 && ib !== -1) return ia - ib;
@@ -1704,22 +1803,55 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     <div class="sec">
       <div class="sec-t">Proton \u843D\u5730</div>
       ${protonCred ? `
-      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u5F53\u524D\u542F\u7528 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter((s2) => currentProtonRegions.some((r) => (s2.name || "").includes(r))).length : 0)} \u53F0\u843D\u5730\uFF09</span></div>
+      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u5F53\u524D\u542F\u7528 ${initialSelectedServerCount} \u53F0\u843D\u5730\uFF09</span></div>
       <div class="row"><span class="k">\u8BC1\u4E66\u5269\u4F59</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} \u5929\uFF08${pExp.toISOString().slice(0, 10)} \u5230\u671F\uFF09</span></div>
-      ${Object.keys(protonRegionsMap).length ? `
-      <div class="row" style="margin-top:14px"><span class="k">\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9</span><span class="v ok">\u5DF2\u52FE\u9009 ${currentProtonRegions.filter((r) => protonRegionsMap[r]).length} \u4E2A\u5730\u533A (${stat.protonServers || 0} \u53F0\u670D\u52A1\u5668)</span></div>
-      <div class="switch-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:10px 0">
-        ${sortedRegionEntries.map(([reg, count]) => {
-    const isChecked = currentProtonRegions.includes(reg);
+      ${sortedRegions.length ? `
+      <div class="row" style="margin-top:14px">
+        <span class="k">\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u53EF\u5C55\u5F00\u52FE\u9009\u5355\u4E2A\u670D\u52A1\u5668 IP\uFF09</span>
+        <span class="v ok" id="proton_summary">\u5DF2\u52FE\u9009 ${initialActiveRegions.size} \u4E2A\u5730\u533A (${initialSelectedServerCount} \u53F0\u670D\u52A1\u5668)</span>
+      </div>
+      <div class="region-list" style="margin:10px 0">
+        ${sortedRegions.map((reg) => {
+    const srvList = protonServersMap[reg];
+    const totalCount = srvList.length;
+    const checkedCount = srvList.filter(isServerActive).length;
+    const isAllChecked = checkedCount === totalCount && totalCount > 0;
     const flag = flagMap[reg] || "\u{1F310}";
-    return `<label class="switch-item" style="padding:8px 10px">
-            <input type="checkbox" name="proton_region" value="${reg}" ${isChecked ? "checked" : ""}>
-            <span>${flag} ${reg} <b style="color:var(--cyan);font-weight:400">(${count}\u53F0)</b></span>
-          </label>`;
+    return `
+          <div class="region-card ${checkedCount > 0 ? "active" : ""}" id="card_${reg}">
+            <div class="region-header" onclick="handleCardClick(event, '${reg}')">
+              <label class="region-main" onclick="event.stopPropagation()">
+                <input type="checkbox" class="region-master-cb" data-region="${reg}"
+                       ${isAllChecked ? "checked" : ""}
+                       onchange="onRegionMasterChange('${reg}', this.checked)">
+                <span class="region-title">${flag} ${reg}</span>
+                <span class="region-tag" id="tag_${reg}">${checkedCount}/${totalCount}\u53F0</span>
+              </label>
+              <button type="button" class="btn-exp" id="btn_exp_${reg}" onclick="toggleRegionExpand('${reg}', event)">
+                \u5C55\u5F00 \u25BC
+              </button>
+            </div>
+            <div class="server-drawer" id="drawer_${reg}" style="display:none">
+              <div class="server-list">
+                ${srvList.map((srv) => {
+      const checked = isServerActive(srv);
+      return `
+                  <label class="server-item">
+                    <input type="checkbox" name="proton_server" value="${srv.name}"
+                           data-region="${reg}" data-ip="${srv.ip}"
+                           ${checked ? "checked" : ""}
+                           onchange="onServerChange('${reg}')">
+                    <span class="srv-name">${srv.name}</span>
+                    <span class="srv-ip">${srv.ip}</span>
+                  </label>`;
+    }).join("")}
+              </div>
+            </div>
+          </div>`;
   }).join("")}
       </div>
       <div class="sub" style="margin-bottom:12px">
-        <button onclick="saveProtonRegions()">\u5E94\u7528\u6240\u9009\u5730\u533A</button>
+        <button onclick="saveProtonRegions()">\u5E94\u7528\u6240\u9009\u5730\u533A\u4E0E\u670D\u52A1\u5668</button>
         <button class="gh" type="button" onclick="selectProtonAsia()">\u4EC5\u4E9A\u592A(\u65E5\u672C/\u65B0\u52A0\u5761)</button>
         <button class="gh" type="button" onclick="toggleProtonAll(true)">\u5168\u9009</button>
         <button class="gh" type="button" onclick="toggleProtonAll(false)">\u6E05\u7A7A</button>
@@ -1843,21 +1975,92 @@ function saveFeatures(){
   };
   post('/api/settings/features', body, '\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA');
 }
-function saveProtonRegions(){
-  const boxes = document.querySelectorAll('input[name="proton_region"]:checked');
-  const regions = Array.from(boxes).map(b => b.value);
-  if(regions.length === 0){
-    if(!confirm("\u672A\u52FE\u9009\u4EFB\u4F55\u5730\u533A\uFF0C\u786E\u5B9A\u4FDD\u5B58\u5417\uFF1F(\u672A\u52FE\u9009\u5C06\u4E0D\u751F\u6210 Proton \u843D\u5730\u8282\u70B9)")) return;
+function toggleRegionExpand(reg, e){
+  if(e) e.stopPropagation();
+  const d = document.getElementById('drawer_' + reg);
+  const btn = document.getElementById('btn_exp_' + reg);
+  const card = document.getElementById('card_' + reg);
+  if(!d) return;
+  const isHidden = (d.style.display === 'none' || !d.style.display);
+  d.style.display = isHidden ? 'block' : 'none';
+  if(btn) btn.textContent = isHidden ? '\u6536\u8D77 \u25B2' : '\u5C55\u5F00 \u25BC';
+  if(card) card.classList.toggle('open', isHidden);
+}
+
+function handleCardClick(e, reg){
+  if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'LABEL' && !e.target.closest('.btn-exp')){
+    toggleRegionExpand(reg);
   }
-  post('/api/settings/proton-regions', { regions: regions }, 'Proton \u843D\u5730\u5730\u533A\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E');
 }
+
+function onRegionMasterChange(reg, checked){
+  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
+  srvBoxes.forEach(b => b.checked = checked);
+  updateRegionUI(reg);
+  updateStats();
+}
+
+function onServerChange(reg){
+  updateRegionUI(reg);
+  updateStats();
+}
+
+function updateRegionUI(reg){
+  const srvBoxes = document.querySelectorAll('input[name="proton_server"][data-region="' + reg + '"]');
+  const masterBox = document.querySelector('.region-master-cb[data-region="' + reg + '"]');
+  const tag = document.getElementById('tag_' + reg);
+  const card = document.getElementById('card_' + reg);
+  const total = srvBoxes.length;
+  let checked = 0;
+  srvBoxes.forEach(b => { if(b.checked) checked++; });
+
+  if(masterBox){
+    masterBox.checked = (checked === total && total > 0);
+    masterBox.indeterminate = (checked > 0 && checked < total);
+  }
+  if(tag) tag.textContent = checked + '/' + total + '\u53F0';
+  if(card) card.classList.toggle('active', checked > 0);
+}
+
+function updateStats(){
+  const srvBoxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const activeRegions = new Set();
+  srvBoxes.forEach(b => activeRegions.add(b.getAttribute('data-region')));
+  const summary = document.getElementById('proton_summary');
+  if(summary){
+    summary.textContent = '\u5DF2\u52FE\u9009 ' + activeRegions.size + ' \u4E2A\u5730\u533A (' + srvBoxes.length + ' \u53F0\u670D\u52A1\u5668)';
+  }
+}
+
+function saveProtonRegions(){
+  const boxes = document.querySelectorAll('input[name="proton_server"]:checked');
+  const servers = Array.from(boxes).map(b => b.value);
+  const regions = Array.from(new Set(Array.from(boxes).map(b => b.getAttribute('data-region'))));
+  if(servers.length === 0){
+    if(!confirm("\u672A\u52FE\u9009\u4EFB\u4F55\u843D\u5730\u670D\u52A1\u5668\uFF0C\u786E\u5B9A\u4FDD\u5B58\u5417\uFF1F(\u672A\u52FE\u9009\u5C06\u4E0D\u751F\u6210 Proton \u843D\u5730\u8282\u70B9)")) return;
+  }
+  post('/api/settings/proton-regions', { servers: servers, regions: regions }, 'Proton \u843D\u5730\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\u5E76\u91CD\u6784\u914D\u7F6E');
+}
+
 function selectProtonAsia(){
-  document.querySelectorAll('input[name="proton_region"]').forEach(b => {
-    b.checked = (b.value === "\u65E5\u672C" || b.value === "\u65B0\u52A0\u5761");
+  document.querySelectorAll('input[name="proton_server"]').forEach(b => {
+    const reg = b.getAttribute('data-region');
+    b.checked = (reg === "\u65E5\u672C" || reg === "\u65B0\u52A0\u5761");
   });
+  document.querySelectorAll('.region-master-cb').forEach(m => {
+    const reg = m.getAttribute('data-region');
+    updateRegionUI(reg);
+  });
+  updateStats();
 }
+
 function toggleProtonAll(checked){
-  document.querySelectorAll('input[name="proton_region"]').forEach(b => b.checked = checked);
+  document.querySelectorAll('input[name="proton_server"]').forEach(b => b.checked = checked);
+  document.querySelectorAll('.region-master-cb').forEach(m => {
+    const reg = m.getAttribute('data-region');
+    updateRegionUI(reg);
+  });
+  updateStats();
 }
 function reregisterWarp(){
   const radios = document.getElementsByName('protocol_choice');
@@ -2029,7 +2232,8 @@ async function getSettings(env) {
     enableProton: s.enableProton ?? true,
     enableWarpDirect: s.enableWarpDirect ?? true,
     enableWind: s.enableWind ?? true,
-    protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null
+    protonRegions: Array.isArray(s.protonRegions) ? s.protonRegions : null,
+    protonServers: Array.isArray(s.protonServers) ? s.protonServers : null
   };
 }
 async function getWarp(env, force = false, protocol = "wg") {
@@ -2086,7 +2290,8 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
     enableWind: settings.enableWind !== false,
     customWgEndpoints,
     customMsEndpoints,
-    protonRegions: settings.protonRegions
+    protonRegions: settings.protonRegions,
+    protonServers: settings.protonServers
   });
   const now = Date.now();
   const state = {
@@ -2098,7 +2303,8 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
-      protonRegions: Array.isArray(settings.protonRegions) ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"]
+      protonRegions: Array.isArray(settings.protonRegions) ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"],
+      protonServers: Array.isArray(settings.protonServers) ? settings.protonServers : null
     },
     stats: {
       entries: cfg.entries,
@@ -2352,12 +2558,21 @@ var index_default = {
     if (path === "/api/settings/proton-regions" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const regions = Array.isArray(body.regions) ? body.regions : [];
+      const servers = Array.isArray(body.servers) ? body.servers : null;
       const cur = await getSettings(env);
-      const updated = { ...cur, protonRegions: regions };
+      const updated = {
+        ...cur,
+        protonRegions: regions,
+        protonServers: servers
+      };
       await env.KV.put(K_SET, JSON.stringify(updated));
       try {
         const s = await rebuild(env);
-        return json({ ok: true, msg: "Proton \u843D\u5730\u5730\u533A\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E", stats: s.stats });
+        return json({
+          ok: true,
+          msg: `Proton \u843D\u5730\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF08\u542F\u7528 ${s.stats.protonServers || 0} \u53F0\u670D\u52A1\u5668\uFF09\uFF0C\u5DF2\u5B9E\u65F6\u91CD\u6784\u8BA2\u9605`,
+          stats: s.stats
+        });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }

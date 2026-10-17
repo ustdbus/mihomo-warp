@@ -425,6 +425,11 @@ export function getProtonIndex(srv) {
   return match ? parseInt(match[0], 10) : 999;
 }
 
+export const REGION_ORDER = [
+  "日本", "新加坡", "美国", "加拿大", "荷兰",
+  "瑞士", "挪威", "波兰", "罗马尼亚", "墨西哥"
+];
+
 export function buildConfig(warp, opera, proton, wind, options = {}) {
   const protocolMode = options.protocolMode === "wg" ? "wg" : (options.protocolMode === "masque" ? "masque" : (options.protocolMode ? options.protocolMode : "masque"));
   const enableOpera = options.enableOpera !== false;
@@ -434,6 +439,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
   const protonRegions = options.protonRegions || null;
+  const protonServers = options.protonServers || null;
 
   let entries = [];
   let proxies = [];
@@ -470,26 +476,53 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
 
-  // Proton 落地 (支持用户在 Worker 面板自由勾选国家/地区)
+  // Proton 落地 (支持用户在 Worker 面板自由勾选具体落地服务器或国家/地区)
   let protonNames = [];
   const protonByServer = {};
   const protonByCC = {};
-  const selectedRegions = Array.isArray(protonRegions)
-    ? protonRegions
-    : ["日本", "新加坡"]; // 默认亚太优选: 日本与新加坡
 
-  // 严格按用户所选国家及国家内序号排序，确保分类准确、整洁、不穿插
+  // 严格按用户所选落地服务器或国家及内部序号排序，确保分类准确、整洁、不穿插
   const targetProtonServers = [];
   if (enableProton && proton && Array.isArray(proton.servers)) {
-    for (const reg of selectedRegions) {
-      const matched = proton.servers.filter((s) => {
-        const r = getProtonRegion(s);
+    if (Array.isArray(protonServers)) {
+      // 精准服务器模式：仅保留用户选中的具体服务器
+      const allowed = new Set(protonServers);
+      for (const s of proton.servers) {
+        const reg = getProtonRegion(s);
         const cc = (s.cc || "").toUpperCase();
-        return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
-      });
-      matched.sort((a, b) => getProtonIndex(a) - getProtonIndex(b));
-      targetProtonServers.push(...matched);
+        if (allowed.has(s.name) || allowed.has(s.ip) || allowed.has(reg) || allowed.has(cc)) {
+          targetProtonServers.push(s);
+        }
+      }
+    } else {
+      // 地区模式
+      const selectedRegions = Array.isArray(protonRegions)
+        ? protonRegions
+        : ["日本", "新加坡"]; // 默认亚太优选: 日本与新加坡
+      for (const reg of selectedRegions) {
+        const matched = proton.servers.filter((s) => {
+          const r = getProtonRegion(s);
+          const cc = (s.cc || "").toUpperCase();
+          return r === reg || cc === reg.toUpperCase() || (s.name || "").includes(reg);
+        });
+        targetProtonServers.push(...matched);
+      }
     }
+
+    // 稳定排序：按 REGION_ORDER 地区顺序，同地区按序号递增
+    targetProtonServers.sort((a, b) => {
+      const regA = getProtonRegion(a);
+      const regB = getProtonRegion(b);
+      if (regA !== regB) {
+        const idxA = REGION_ORDER.indexOf(regA);
+        const idxB = REGION_ORDER.indexOf(regB);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return regA.localeCompare(regB, "zh-CN");
+      }
+      return getProtonIndex(a) - getProtonIndex(b);
+    });
   }
 
   if (targetProtonServers.length) {
