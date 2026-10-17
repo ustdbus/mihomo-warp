@@ -14,6 +14,7 @@ worker/package-lock.json
 # worker/dist 是网页部署要用的单文件，必须提交
 !worker/dist/
 local_results/
+warp-test/local_results/
 __pycache__/
 xiaohe/
 warp-masque-actions/
