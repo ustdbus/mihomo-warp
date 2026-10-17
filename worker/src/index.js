@@ -429,7 +429,14 @@ export default {
       const token = await signToken(cred);
       const pushToken = await env.KV.get(K_PUSH);
       const protonCred = await env.KV.get(K_PROTON, "json");
-      const vpngate = await env.KV.get(K_VPNGATE, "json");
+      let vpngate = await env.KV.get(K_VPNGATE, "json");
+      if (!vpngate) {
+        try {
+          vpngate = await getVpnGate(env);
+        } catch {
+          /* ignore */
+        }
+      }
       let windUsage = null;
       const wa = await env.KV.get(K_WIND, "json");
       if (wa && wa.sessionAuthHash) {

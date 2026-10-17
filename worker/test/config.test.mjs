@@ -354,12 +354,12 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
     totalParsed: 3,
   };
 
-  // 1. 默认包含全部 2 个国家
+  // 1. 默认包含全部 2 个国家 (选定一国选所有)
   const rAll = buildConfig(warp, opera, null, null, { protocolMode: "wg" }, fakeVpnGate);
   const yAll = rAll.yaml;
   const gsAll = [...yAll.matchAll(/^  - name: (.+)$/gm)].map((m) => m[1]);
 
-  t(`VPN Gate 生成 2 台落地服务器 (每国 1 台最速)`, rAll.vpngateServers === 2);
+  t(`VPN Gate 生成全部 3 台落地服务器`, rAll.vpngateServers === 3);
   t("生成 OpenVPN 协议节点", yAll.includes("type: openvpn"));
   t("包含 ca, cert, key 多行证书", yAll.includes("ca: |") && yAll.includes("cert: |") && yAll.includes("key: |"));
   t("保留 VPNGate-日本 且为 select 组", /- name: VPNGate-日本\n    type: select/.test(yAll));
@@ -369,23 +369,23 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   // 节点名与 dialer-proxy
   const vgDps = [...yAll.matchAll(/name: "VG-[^"]+"[\s\S]*?dialer-proxy: (\S+)/g)].map((m) => m[1]);
   t(`VPN Gate 套娃节点均有 dialer-proxy 且为 IPv4 (${vgDps.length} 个)`,
-    vgDps.length === 40 && vgDps.every((d) => !d.startsWith("v6-"))); // 2 国 * 20 个 WG 接入点 = 40
+    vgDps.length === 3 && vgDps.every((d) => !d.startsWith("v6-"))); // 3 台服务器轮询绑定接入点 = 3 个节点
 
   // 落地 IP 加防环路 DIRECT 规则
   t("物理 IP 写入 DIRECT 防环路规则",
     yAll.includes("IP-CIDR,123.45.67.89/32,DIRECT,no-resolve") &&
     yAll.includes("IP-CIDR,210.120.30.40/32,DIRECT,no-resolve"));
 
-  // 2. 指定只勾选日本
+  // 2. 指定只勾选日本 (日本全部 2 台节点均选入)
   const rJpOnly = buildConfig(warp, opera, null, null, {
     protocolMode: "wg",
     vpngateRegions: ["日本"],
   }, fakeVpnGate);
-  t("只勾选日本时落地为 1 台", rJpOnly.vpngateServers === 1);
+  t("只勾选日本时落地为该国全部 2 台", rJpOnly.vpngateServers === 2);
   t("只勾选日本时有 VPNGate-日本，无 VPNGate-韩国",
     rJpOnly.yaml.includes("VPNGate-日本") && !rJpOnly.yaml.includes("VPNGate-韩国"));
-  t("只含日本套娃节点，不含韩国节点",
-    rJpOnly.yaml.includes("VG-日本-1@") && !rJpOnly.yaml.includes("VG-韩国-1@"));
+  t("包含日本全部套娃节点，不含韩国节点",
+    rJpOnly.yaml.includes("VG-日本-1@") && rJpOnly.yaml.includes("VG-日本-2@") && !rJpOnly.yaml.includes("VG-韩国-1@"));
 
   // 3. 关闭 VPN Gate 开关
   const rOff = buildConfig(warp, opera, null, null, {

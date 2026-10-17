@@ -642,11 +642,9 @@ ${q(names)}`).join("\n\n");
 
   if (enableVpnGate && vpngate && Array.isArray(vpngate.servers)) {
     const selectedRegions = new Set(vpngateRegions);
-    const seenCountry = new Set();
     for (const s of vpngate.servers) {
-      if ((selectedRegions.has(s.country) || selectedRegions.has(s.cc)) && !seenCountry.has(s.country)) {
+      if (selectedRegions.has(s.country) || selectedRegions.has(s.cc)) {
         targetVgServers.push(s);
-        seenCountry.add(s.country);
       }
     }
   }
@@ -654,14 +652,14 @@ ${q(names)}`).join("\n\n");
   if (targetVgServers.length) {
     const dialerList = protocolMode === "wg" ? entries : v4Entries;
     if (dialerList.length) {
-      for (const srv of targetVgServers) {
+      targetVgServers.forEach((srv, i) => {
+        const ent = dialerList[i % dialerList.length];
+        const name = `${srv.name}@${ent}`;
+        vgNames.push(name);
+        (vgByCountry[srv.country] = vgByCountry[srv.country] || []).push(name);
         if (srv.ip) directIps.push(srv.ip);
-        for (const ent of dialerList) {
-          const name = `${srv.name}@${ent}`;
-          vgNames.push(name);
-          (vgByCountry[srv.country] = vgByCountry[srv.country] || []).push(name);
 
-          proxies.push(`  - name: "${name}"
+        proxies.push(`  - name: "${name}"
     type: openvpn
     server: ${srv.ip}
     port: ${srv.port}
@@ -678,8 +676,7 @@ ${indentBlock(srv.ca, 6)}
 ${indentBlock(srv.cert, 6)}
     key: |
 ${indentBlock(srv.key, 6)}`);
-        }
-      }
+      });
     }
   }
 
