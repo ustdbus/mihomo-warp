@@ -234,6 +234,30 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     ? `${gb(windUsage.used)} / ${gb(windUsage.max)}（${windPct}%）` : null;
   const pLeft = pExp ? Math.floor((pExp.getTime() - Date.now()) / 86400000) : null;
 
+  const protonRegionsMap = {};
+  if (protonCred && Array.isArray(protonCred.servers)) {
+    for (const s of protonCred.servers) {
+      const reg = s.name.replace(/\d+$/, "");
+      protonRegionsMap[reg] = (protonRegionsMap[reg] || 0) + 1;
+    }
+  }
+  const currentProtonRegions = Array.isArray(settings?.protonRegions) && settings.protonRegions.length > 0
+    ? settings.protonRegions
+    : ["日本", "新加坡"];
+
+  const flagMap = {
+    "日本": "🇯🇵",
+    "新加坡": "🇸🇬",
+    "美国": "🇺🇸",
+    "加拿大": "🇨🇦",
+    "荷兰": "🇳🇱",
+    "瑞士": "🇨🇭",
+    "挪威": "🇳🇴",
+    "波兰": "🇵🇱",
+    "罗马尼亚": "🇷🇴",
+    "墨西哥": "🇲🇽",
+  };
+
   const row = (k, v, cls = "") =>
     `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
 
@@ -410,13 +434,32 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
     <div class="sec">
       <div class="sec-t">Proton 落地</div>
       ${protonCred ? `
-      <div class="row"><span class="k">状态</span><span class="v ok">已配置 ${protonCred.servers.length} 台（启用 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter(s => (s.name || '').includes('日本') || (s.name || '').toUpperCase().startsWith('JP')).length : 0)} 台日本落地）</span></div>
+      <div class="row"><span class="k">状态</span><span class="v ok">已配置 ${protonCred.servers.length} 台（当前启用 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter(s => currentProtonRegions.some(r => (s.name || '').includes(r))).length : 0)} 台落地）</span></div>
       <div class="row"><span class="k">证书剩余</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} 天（${pExp.toISOString().slice(0, 10)} 到期）</span></div>
+      ${Object.keys(protonRegionsMap).length ? `
+      <div class="row" style="margin-top:14px"><span class="k">落地国家/地区选择</span><span class="v ok">已勾选 ${currentProtonRegions.filter(r => protonRegionsMap[r]).length} 个地区 (${stat.protonServers || 0} 台服务器)</span></div>
+      <div class="switch-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:10px 0">
+        ${Object.entries(protonRegionsMap).map(([reg, count]) => {
+          const isChecked = currentProtonRegions.includes(reg);
+          const flag = flagMap[reg] || "🌐";
+          return `<label class="switch-item" style="padding:8px 10px">
+            <input type="checkbox" name="proton_region" value="${reg}" ${isChecked ? "checked" : ""}>
+            <span>${flag} ${reg} <b style="color:var(--cyan);font-weight:400">(${count}台)</b></span>
+          </label>`;
+        }).join("")}
+      </div>
+      <div class="sub" style="margin-bottom:12px">
+        <button onclick="saveProtonRegions()">应用所选地区</button>
+        <button class="gh" type="button" onclick="selectProtonAsia()">仅亚太(日本/新加坡)</button>
+        <button class="gh" type="button" onclick="toggleProtonAll(true)">全选</button>
+        <button class="gh" type="button" onclick="toggleProtonAll(false)">清空</button>
+      </div>
+      ` : ""}
       ` : `
       <div class="row"><span class="k">状态</span><span class="v warn">未配置</span></div>
       `}
       <div class="note" style="margin-bottom:10px">
-        Proton 走 GitHub Actions 流水线自动续签推送到 Worker。
+        Proton 走 GitHub Actions 流水线自动续签推送到 Worker。可任意勾选想要作为落地的国家/地区，保存后自动实时重构订阅。
       </div>
       <div class="sub">
         <input id="pu" value="${pushUrl || "点右边生成"}" readonly>
@@ -526,6 +569,22 @@ function saveFeatures(){
     enableWind: document.getElementById('sw_wind').checked,
   };
   post('/api/settings/features', body, '开关已保存并重建');
+}
+function saveProtonRegions(){
+  const boxes = document.querySelectorAll('input[name="proton_region"]:checked');
+  const regions = Array.from(boxes).map(b => b.value);
+  if(regions.length === 0){
+    if(!confirm("未勾选任何地区，确定保存吗？(未勾选将不生成 Proton 落地节点)")) return;
+  }
+  post('/api/settings/proton-regions', { regions: regions }, 'Proton 落地地区已保存并重建配置');
+}
+function selectProtonAsia(){
+  document.querySelectorAll('input[name="proton_region"]').forEach(b => {
+    b.checked = (b.value === "日本" || b.value === "新加坡");
+  });
+}
+function toggleProtonAll(checked){
+  document.querySelectorAll('input[name="proton_region"]').forEach(b => b.checked = checked);
 }
 function reregisterWarp(){
   const radios = document.getElementsByName('protocol_choice');

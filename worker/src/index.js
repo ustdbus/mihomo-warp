@@ -130,6 +130,7 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
     enableWind: settings.enableWind !== false,
     customWgEndpoints,
     customMsEndpoints,
+    protonRegions: settings.protonRegions,
   });
 
   const now = Date.now();
@@ -142,6 +143,7 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
       enableWind: settings.enableWind !== false,
+      protonRegions: settings.protonRegions || ["日本", "新加坡"],
     },
     stats: {
       entries: cfg.entries,
@@ -407,6 +409,21 @@ export default {
       try {
         const s = await rebuild(env);
         return json({ ok: true, msg: "节点开关已保存并重建配置", stats: s.stats });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+
+    // 保存 Proton 落地选中的国家/地区
+    if (path === "/api/settings/proton-regions" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const regions = Array.isArray(body.regions) ? body.regions : [];
+      const cur = await getSettings(env);
+      const updated = { ...cur, protonRegions: regions };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({ ok: true, msg: "Proton 落地地区已保存并重建配置", stats: s.stats });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }

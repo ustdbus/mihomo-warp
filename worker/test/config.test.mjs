@@ -69,7 +69,7 @@ t(`无悬空引用${dangling.length ? " (" + dangling.slice(0, 3) + ")" : ""}`, 
   // 纯 IPv4 机器上会全部 network is unreachable
   const dps = [...y.matchAll(/type: wireguard[\s\S]*?dialer-proxy: (\S+)/g)].map(m => m[1]);
   t(`Proton 接入点全是 IPv4 (${dps.length} 个)`,
-    dps.length === 2 && dps.every(d => !d.startsWith("v6-")));
+    dps.length === 58 && dps.every(d => !d.startsWith("v6-")));
 
   // 10.2.0.1 是隧道内网 DNS，配上会让解析请求自己路由回 Proton 节点，死循环
   t("Proton 节点不带隧道内 DNS", !/10\.2\.0\.1/.test(y));

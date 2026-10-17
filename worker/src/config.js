@@ -393,6 +393,7 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   const enableWind = options.enableWind !== false;
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
+  const protonRegions = options.protonRegions || null;
 
   let entries = [];
   let proxies = [];
@@ -426,27 +427,39 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
 
-  // Proton 落地 (限制只读取日本节点)
+  // Proton 落地 (支持用户在 Worker 面板自由勾选国家/地区)
   let protonNames = [];
+  const protonByServer = {};
   const protonByCC = {};
-  const jpProtonServers = (enableProton && proton && proton.servers && proton.servers.length)
+  const selectedRegions = Array.isArray(protonRegions) && protonRegions.length > 0
+    ? protonRegions
+    : ["日本", "新加坡"]; // 默认亚太优选: 日本与新加坡
+
+  const targetProtonServers = (enableProton && proton && proton.servers && proton.servers.length)
     ? proton.servers.filter((s) => {
-        const n = (s.name || "").toLowerCase();
-        const cc = (s.cc || "").toLowerCase();
-        return n.includes("日本") || n.startsWith("jp") || cc === "jp";
+        const reg = s.name.replace(/\d+$/, "");
+        const cc = (s.cc || "").toUpperCase();
+        return selectedRegions.some((r) => {
+          const ru = r.toUpperCase();
+          return s.name.includes(r) || reg === r || cc === ru || (s.name || "").toUpperCase().startsWith(ru);
+        });
       })
     : [];
 
-  if (jpProtonServers.length) {
-    if (protocolMode === "wg") {
-      // WireGuard 模式：全组合 (笛卡尔积，日本落地 x 接入点)
-      for (const srv of jpProtonServers) {
-        for (const ent of entries) {
-          const name = `${srv.name}@${ent}`;
-          protonNames.push(name);
-          const cc = srv.name.replace(/\d+$/, "");
-          (protonByCC[cc] = protonByCC[cc] || []).push(name);
-          proxies.push(`  - name: "${name}"
+  if (targetProtonServers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    for (const srv of targetProtonServers) {
+      protonByServer[srv.name] = [];
+      const cc = srv.name.replace(/\d+$/, "");
+      protonByCC[cc] = protonByCC[cc] || [];
+
+      for (const ent of dialerList) {
+        const name = `${srv.name}@${ent}`;
+        protonNames.push(name);
+        protonByServer[srv.name].push(name);
+        protonByCC[cc].push(name);
+
+        proxies.push(`  - name: "${name}"
     type: wireguard
     server: ${srv.ip}
     port: ${srv.port}
@@ -454,32 +467,10 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1120
-    persistent-keepalive: 25
+    mtu: 1280
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
-        }
       }
-    } else {
-      // MASQUE 模式：轮询 v4Entries
-      jpProtonServers.forEach((srv, i) => {
-        const ent = v4Entries[i % v4Entries.length];
-        protonNames.push(srv.name);
-        const cc = srv.name.replace(/\d+$/, "");
-        (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
-        proxies.push(`  - name: "${srv.name}"
-    type: wireguard
-    server: ${srv.ip}
-    port: ${srv.port}
-    ip: 10.2.0.2
-    private-key: ${proton.privateKey}
-    public-key: ${srv.pub}
-    udp: true
-    mtu: 1120
-    persistent-keepalive: 25
-    remote-dns-resolve: true
-    dialer-proxy: ${ent}`);
-      });
     }
   }
 
@@ -512,16 +503,32 @@ export function buildConfig(warp, opera, proton, wind, options = {}) {
     proxies:
 ${q(tags)}`).join("\n\n");
 
-  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
-  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) =>
-    `  - name: Proton-${cc}
+  const serverGroupNames = Object.keys(protonByServer);
+  const serverGroupDefs = Object.entries(protonByServer).map(([srvName, names]) =>
+    `  - name: ${srvName}
+    type: select
+    proxies:
+      - ${srvName}-自动优选
+${p(names)}
+
+  - name: ${srvName}-自动优选
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 100
+    tolerance: 50
     lazy: true
     proxies:
-${q(names)}`).join("\n\n");
+${q(names)}`
+  ).join("\n\n");
+
+  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
+  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => {
+    const matchedServers = serverGroupNames.filter((s) => s.startsWith(cc));
+    return `  - name: Proton-${cc}
+    type: select
+    proxies:
+${p(matchedServers.length ? matchedServers : names)}`;
+  }).join("\n\n");
 
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) =>
@@ -548,7 +555,7 @@ ${q(names)}`).join("\n\n");
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP直连");
-  if (protonNames.length) picks.push("Proton线路", ...protonCCNames);
+  if (protonNames.length) picks.push("Proton线路", ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe线路", ...windLocNames);
 
   const { prov, rules } = buildRules();
@@ -602,6 +609,7 @@ ${q(entries)}
     proxies:
       - Proton-自动
 ${p(protonCCNames)}
+${p(serverGroupNames)}
 
   - name: Proton-自动
     type: url-test
@@ -613,6 +621,8 @@ ${p(protonCCNames)}
 ${q(protonNames)}
 
 ${protonCCDefs}
+
+${serverGroupDefs}
 ` : ""}${windNames.length ? `
   - name: Windscribe线路
     type: select
@@ -659,7 +669,7 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
-    protonServers: jpProtonServers.length,
+    protonServers: targetProtonServers.length,
     windServers: (enableWind && wind?.servers) ? wind.servers.length : 0,
     enableOpera,
     enableProton,

@@ -877,6 +877,7 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   const enableWind = options.enableWind !== false;
   const customWgEndpoints = options.customWgEndpoints || null;
   const customMsEndpoints = options.customMsEndpoints || null;
+  const protonRegions = options.protonRegions || null;
   let entries = [];
   let proxies = [];
   let v4Entries = [];
@@ -905,21 +906,29 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
   }
   const combos = Object.values(byLoc).reduce((a, b) => a + b.length, 0);
   let protonNames = [];
+  const protonByServer = {};
   const protonByCC = {};
-  const jpProtonServers = enableProton && proton && proton.servers && proton.servers.length ? proton.servers.filter((s) => {
-    const n = (s.name || "").toLowerCase();
-    const cc = (s.cc || "").toLowerCase();
-    return n.includes("\u65E5\u672C") || n.startsWith("jp") || cc === "jp";
+  const selectedRegions = Array.isArray(protonRegions) && protonRegions.length > 0 ? protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+  const targetProtonServers = enableProton && proton && proton.servers && proton.servers.length ? proton.servers.filter((s) => {
+    const reg = s.name.replace(/\d+$/, "");
+    const cc = (s.cc || "").toUpperCase();
+    return selectedRegions.some((r) => {
+      const ru = r.toUpperCase();
+      return s.name.includes(r) || reg === r || cc === ru || (s.name || "").toUpperCase().startsWith(ru);
+    });
   }) : [];
-  if (jpProtonServers.length) {
-    if (protocolMode === "wg") {
-      for (const srv of jpProtonServers) {
-        for (const ent of entries) {
-          const name = `${srv.name}@${ent}`;
-          protonNames.push(name);
-          const cc = srv.name.replace(/\d+$/, "");
-          (protonByCC[cc] = protonByCC[cc] || []).push(name);
-          proxies.push(`  - name: "${name}"
+  if (targetProtonServers.length) {
+    const dialerList = protocolMode === "wg" ? entries : v4Entries;
+    for (const srv of targetProtonServers) {
+      protonByServer[srv.name] = [];
+      const cc = srv.name.replace(/\d+$/, "");
+      protonByCC[cc] = protonByCC[cc] || [];
+      for (const ent of dialerList) {
+        const name = `${srv.name}@${ent}`;
+        protonNames.push(name);
+        protonByServer[srv.name].push(name);
+        protonByCC[cc].push(name);
+        proxies.push(`  - name: "${name}"
     type: wireguard
     server: ${srv.ip}
     port: ${srv.port}
@@ -927,31 +936,10 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     private-key: ${proton.privateKey}
     public-key: ${srv.pub}
     udp: true
-    mtu: 1120
-    persistent-keepalive: 25
+    mtu: 1280
     remote-dns-resolve: true
     dialer-proxy: ${ent}`);
-        }
       }
-    } else {
-      jpProtonServers.forEach((srv, i) => {
-        const ent = v4Entries[i % v4Entries.length];
-        protonNames.push(srv.name);
-        const cc = srv.name.replace(/\d+$/, "");
-        (protonByCC[cc] = protonByCC[cc] || []).push(srv.name);
-        proxies.push(`  - name: "${srv.name}"
-    type: wireguard
-    server: ${srv.ip}
-    port: ${srv.port}
-    ip: 10.2.0.2
-    private-key: ${proton.privateKey}
-    public-key: ${srv.pub}
-    udp: true
-    mtu: 1120
-    persistent-keepalive: 25
-    remote-dns-resolve: true
-    dialer-proxy: ${ent}`);
-      });
     }
   }
   const windNames = [];
@@ -979,15 +967,31 @@ function buildConfig(warp, opera, proton, wind, options = {}) {
     lazy: true
     proxies:
 ${q(tags)}`).join("\n\n");
-  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
-  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => `  - name: Proton-${cc}
+  const serverGroupNames = Object.keys(protonByServer);
+  const serverGroupDefs = Object.entries(protonByServer).map(
+    ([srvName, names]) => `  - name: ${srvName}
+    type: select
+    proxies:
+      - ${srvName}-\u81EA\u52A8\u4F18\u9009
+${p(names)}
+
+  - name: ${srvName}-\u81EA\u52A8\u4F18\u9009
     type: url-test
     url: http://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 100
+    tolerance: 50
     lazy: true
     proxies:
-${q(names)}`).join("\n\n");
+${q(names)}`
+  ).join("\n\n");
+  const protonCCNames = Object.keys(protonByCC).map((c) => `Proton-${c}`);
+  const protonCCDefs = Object.entries(protonByCC).map(([cc, names]) => {
+    const matchedServers = serverGroupNames.filter((s) => s.startsWith(cc));
+    return `  - name: Proton-${cc}
+    type: select
+    proxies:
+${p(matchedServers.length ? matchedServers : names)}`;
+  }).join("\n\n");
   const windLocNames = Object.keys(windByLoc).map((l) => `WS-${l}`);
   const windLocDefs = Object.entries(windByLoc).map(([loc, names]) => `  - name: WS-${loc}
     type: url-test
@@ -1008,7 +1012,7 @@ ${q(names)}`).join("\n\n");
   const picks = [];
   if (locNames.length) picks.push(...locNames);
   if (enableWarpDirect) picks.push("WARP\u76F4\u8FDE");
-  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...protonCCNames);
+  if (protonNames.length) picks.push("Proton\u7EBF\u8DEF", ...serverGroupNames);
   if (windNames.length) picks.push("Windscribe\u7EBF\u8DEF", ...windLocNames);
   const { prov, rules } = buildRules();
   const yaml = `# Opera VPN over Cloudflare WARP (${protocolMode.toUpperCase()})
@@ -1060,6 +1064,7 @@ ${q(entries)}
     proxies:
       - Proton-\u81EA\u52A8
 ${p(protonCCNames)}
+${p(serverGroupNames)}
 
   - name: Proton-\u81EA\u52A8
     type: url-test
@@ -1071,6 +1076,8 @@ ${p(protonCCNames)}
 ${q(protonNames)}
 
 ${protonCCDefs}
+
+${serverGroupDefs}
 ` : ""}${windNames.length ? `
   - name: Windscribe\u7EBF\u8DEF
     type: select
@@ -1115,7 +1122,7 @@ ${rules}
     totalCombos,
     proton: protonCombos,
     wind: windCombos,
-    protonServers: jpProtonServers.length,
+    protonServers: targetProtonServers.length,
     windServers: enableWind && wind?.servers ? wind.servers.length : 0,
     enableOpera,
     enableProton,
@@ -1468,6 +1475,26 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
   const gb = (n) => (n / 1073741824).toFixed(2) + " GB";
   const windUsageTxt = windUsage && windUsage.max ? `${gb(windUsage.used)} / ${gb(windUsage.max)}\uFF08${windPct}%\uFF09` : null;
   const pLeft = pExp ? Math.floor((pExp.getTime() - Date.now()) / 864e5) : null;
+  const protonRegionsMap = {};
+  if (protonCred && Array.isArray(protonCred.servers)) {
+    for (const s2 of protonCred.servers) {
+      const reg = s2.name.replace(/\d+$/, "");
+      protonRegionsMap[reg] = (protonRegionsMap[reg] || 0) + 1;
+    }
+  }
+  const currentProtonRegions = Array.isArray(settings?.protonRegions) && settings.protonRegions.length > 0 ? settings.protonRegions : ["\u65E5\u672C", "\u65B0\u52A0\u5761"];
+  const flagMap = {
+    "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
+    "\u65B0\u52A0\u5761": "\u{1F1F8}\u{1F1EC}",
+    "\u7F8E\u56FD": "\u{1F1FA}\u{1F1F8}",
+    "\u52A0\u62FF\u5927": "\u{1F1E8}\u{1F1E6}",
+    "\u8377\u5170": "\u{1F1F3}\u{1F1F1}",
+    "\u745E\u58EB": "\u{1F1E8}\u{1F1ED}",
+    "\u632A\u5A01": "\u{1F1F3}\u{1F1F4}",
+    "\u6CE2\u5170": "\u{1F1F5}\u{1F1F1}",
+    "\u7F57\u9A6C\u5C3C\u4E9A": "\u{1F1F7}\u{1F1F4}",
+    "\u58A8\u897F\u54E5": "\u{1F1F2}\u{1F1FD}"
+  };
   const row = (k, v, cls = "") => `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head>
@@ -1642,13 +1669,32 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
     <div class="sec">
       <div class="sec-t">Proton \u843D\u5730</div>
       ${protonCred ? `
-      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u542F\u7528 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter((s2) => (s2.name || "").includes("\u65E5\u672C") || (s2.name || "").toUpperCase().startsWith("JP")).length : 0)} \u53F0\u65E5\u672C\u843D\u5730\uFF09</span></div>
+      <div class="row"><span class="k">\u72B6\u6001</span><span class="v ok">\u5DF2\u914D\u7F6E ${protonCred.servers.length} \u53F0\uFF08\u5F53\u524D\u542F\u7528 ${stat.protonServers || (protonCred.servers ? protonCred.servers.filter((s2) => currentProtonRegions.some((r) => (s2.name || "").includes(r))).length : 0)} \u53F0\u843D\u5730\uFF09</span></div>
       <div class="row"><span class="k">\u8BC1\u4E66\u5269\u4F59</span><span class="v ${pLeft <= 1 ? "warn" : "ok"}">${pLeft} \u5929\uFF08${pExp.toISOString().slice(0, 10)} \u5230\u671F\uFF09</span></div>
+      ${Object.keys(protonRegionsMap).length ? `
+      <div class="row" style="margin-top:14px"><span class="k">\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9</span><span class="v ok">\u5DF2\u52FE\u9009 ${currentProtonRegions.filter((r) => protonRegionsMap[r]).length} \u4E2A\u5730\u533A (${stat.protonServers || 0} \u53F0\u670D\u52A1\u5668)</span></div>
+      <div class="switch-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:10px 0">
+        ${Object.entries(protonRegionsMap).map(([reg, count]) => {
+    const isChecked = currentProtonRegions.includes(reg);
+    const flag = flagMap[reg] || "\u{1F310}";
+    return `<label class="switch-item" style="padding:8px 10px">
+            <input type="checkbox" name="proton_region" value="${reg}" ${isChecked ? "checked" : ""}>
+            <span>${flag} ${reg} <b style="color:var(--cyan);font-weight:400">(${count}\u53F0)</b></span>
+          </label>`;
+  }).join("")}
+      </div>
+      <div class="sub" style="margin-bottom:12px">
+        <button onclick="saveProtonRegions()">\u5E94\u7528\u6240\u9009\u5730\u533A</button>
+        <button class="gh" type="button" onclick="selectProtonAsia()">\u4EC5\u4E9A\u592A(\u65E5\u672C/\u65B0\u52A0\u5761)</button>
+        <button class="gh" type="button" onclick="toggleProtonAll(true)">\u5168\u9009</button>
+        <button class="gh" type="button" onclick="toggleProtonAll(false)">\u6E05\u7A7A</button>
+      </div>
+      ` : ""}
       ` : `
       <div class="row"><span class="k">\u72B6\u6001</span><span class="v warn">\u672A\u914D\u7F6E</span></div>
       `}
       <div class="note" style="margin-bottom:10px">
-        Proton \u8D70 GitHub Actions \u6D41\u6C34\u7EBF\u81EA\u52A8\u7EED\u7B7E\u63A8\u9001\u5230 Worker\u3002
+        Proton \u8D70 GitHub Actions \u6D41\u6C34\u7EBF\u81EA\u52A8\u7EED\u7B7E\u63A8\u9001\u5230 Worker\u3002\u53EF\u4EFB\u610F\u52FE\u9009\u60F3\u8981\u4F5C\u4E3A\u843D\u5730\u7684\u56FD\u5BB6/\u5730\u533A\uFF0C\u4FDD\u5B58\u540E\u81EA\u52A8\u5B9E\u65F6\u91CD\u6784\u8BA2\u9605\u3002
       </div>
       <div class="sub">
         <input id="pu" value="${pushUrl || "\u70B9\u53F3\u8FB9\u751F\u6210"}" readonly>
@@ -1761,6 +1807,22 @@ function saveFeatures(){
     enableWind: document.getElementById('sw_wind').checked,
   };
   post('/api/settings/features', body, '\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA');
+}
+function saveProtonRegions(){
+  const boxes = document.querySelectorAll('input[name="proton_region"]:checked');
+  const regions = Array.from(boxes).map(b => b.value);
+  if(regions.length === 0){
+    if(!confirm("\u672A\u52FE\u9009\u4EFB\u4F55\u5730\u533A\uFF0C\u786E\u5B9A\u4FDD\u5B58\u5417\uFF1F(\u672A\u52FE\u9009\u5C06\u4E0D\u751F\u6210 Proton \u843D\u5730\u8282\u70B9)")) return;
+  }
+  post('/api/settings/proton-regions', { regions: regions }, 'Proton \u843D\u5730\u5730\u533A\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E');
+}
+function selectProtonAsia(){
+  document.querySelectorAll('input[name="proton_region"]').forEach(b => {
+    b.checked = (b.value === "\u65E5\u672C" || b.value === "\u65B0\u52A0\u5761");
+  });
+}
+function toggleProtonAll(checked){
+  document.querySelectorAll('input[name="proton_region"]').forEach(b => b.checked = checked);
 }
 function reregisterWarp(){
   const radios = document.getElementsByName('protocol_choice');
@@ -1987,7 +2049,8 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
     enableWarpDirect: settings.enableWarpDirect !== false,
     enableWind: settings.enableWind !== false,
     customWgEndpoints,
-    customMsEndpoints
+    customMsEndpoints,
+    protonRegions: settings.protonRegions
   });
   const now = Date.now();
   const state = {
@@ -1998,7 +2061,8 @@ async function rebuild(env, { forceWarp = false, newProtocol = null } = {}) {
       enableOpera: settings.enableOpera !== false,
       enableProton: settings.enableProton !== false,
       enableWarpDirect: settings.enableWarpDirect !== false,
-      enableWind: settings.enableWind !== false
+      enableWind: settings.enableWind !== false,
+      protonRegions: settings.protonRegions || ["\u65E5\u672C", "\u65B0\u52A0\u5761"]
     },
     stats: {
       entries: cfg.entries,
@@ -2245,6 +2309,19 @@ var index_default = {
       try {
         const s = await rebuild(env);
         return json({ ok: true, msg: "\u8282\u70B9\u5F00\u5173\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E", stats: s.stats });
+      } catch (e) {
+        return json({ ok: false, error: e.message }, 500);
+      }
+    }
+    if (path === "/api/settings/proton-regions" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const regions = Array.isArray(body.regions) ? body.regions : [];
+      const cur = await getSettings(env);
+      const updated = { ...cur, protonRegions: regions };
+      await env.KV.put(K_SET, JSON.stringify(updated));
+      try {
+        const s = await rebuild(env);
+        return json({ ok: true, msg: "Proton \u843D\u5730\u5730\u533A\u5DF2\u4FDD\u5B58\u5E76\u91CD\u5EFA\u914D\u7F6E", stats: s.stats });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }
