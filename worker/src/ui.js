@@ -535,11 +535,11 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleRegionListExpand(event)">
         <span class="k" style="display:flex;align-items:center;gap:8px">
           <span>落地国家/地区选择（单选落地 IP）</span>
-          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">收起列表 ▲</span>
+          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">展开列表 ▼</span>
         </span>
         <span class="v ok" id="proton_summary">已勾选 ${initialActiveRegions.size} 个地区 (${initialSelectedServerCount} 台服务器)</span>
       </div>
-      <div id="proton_regions_wrapper">
+      <div id="proton_regions_wrapper" style="display:none">
         <div class="region-list" style="margin:10px 0">
           ${sortedRegions.map((reg) => {
             const srvList = protonServersMap[reg];
@@ -641,11 +641,11 @@ export function renderUI(state, host, sp, token, cred, pushToken, protonCred, wi
       <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleVgListExpand(event)">
         <span class="k" style="display:flex;align-items:center;gap:8px">
           <span>VPN Gate 国家/地区选择（自由多选，不限连接数）</span>
-          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">收起列表 ▲</span>
+          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">展开列表 ▼</span>
         </span>
         <span class="v ok" id="vg_summary">已勾选 ${activeVgRegions.size} 个国家</span>
       </div>
-      <div id="vg_regions_wrapper">
+      <div id="vg_regions_wrapper" style="display:none">
         <div class="switch-grid" style="margin:10px 0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
           ${Object.values(vpngate.regions || {}).map((item) => {
             const checked = currentVgRegions.includes(item.country);

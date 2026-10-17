@@ -5,6 +5,19 @@ const VPNGATE_DIRECT = "https://www.vpngate.net/api/iphone/";
 const VPNGATE_MIRROR = "https://p.xy.kg/vpngate";
 const MIRROR_KEY = "8rhIFzFKRJMFAe-xP5OQPclDEvSjKlHo";
 
+export function getFlagEmoji(countryCode) {
+  if (!countryCode || countryCode.length !== 2) return "🌐";
+  try {
+    const codePoints = countryCode
+      .toUpperCase()
+      .split("")
+      .map((c) => 127397 + c.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
+  } catch {
+    return "🌐";
+  }
+}
+
 export const COUNTRY_FLAG_MAP = {
   "日本": "🇯🇵",
   "韩国": "🇰🇷",
@@ -23,6 +36,8 @@ export const COUNTRY_FLAG_MAP = {
   "菲律宾": "🇵🇭",
   "马来西亚": "🇲🇾",
   "印度": "🇮🇳",
+  "克罗地亚": "🇭🇷",
+  "巴西": "🇧🇷",
 };
 
 export const COUNTRY_NAME_MAP = {
@@ -44,6 +59,24 @@ export const COUNTRY_NAME_MAP = {
   MY: "马来西亚",
   ID: "印尼",
   IN: "印度",
+  HR: "克罗地亚",
+  BR: "巴西",
+  NL: "荷兰",
+  CH: "瑞士",
+  UA: "乌克兰",
+  IT: "意大利",
+  ES: "西班牙",
+  MX: "墨西哥",
+  SE: "瑞典",
+  NO: "挪威",
+  PL: "波兰",
+  RO: "罗马尼亚",
+  TR: "土耳其",
+  AR: "阿根廷",
+  CL: "智利",
+  CO: "哥伦比亚",
+  ZA: "南非",
+  NZ: "新西兰",
 };
 
 /**
@@ -111,7 +144,8 @@ export function parseVpnGateCSV(csvText) {
 
     const cc = (parts[idxCC] || "").trim().toUpperCase();
     const countryLong = (parts[idxCountry] || "").trim();
-    const countryZh = COUNTRY_NAME_MAP[cc] || countryLong || "其他";
+    const cleanLong = countryLong.replace(/\s*\([^)]*\)/g, "").trim();
+    const countryZh = COUNTRY_NAME_MAP[cc] || COUNTRY_NAME_MAP[cleanLong.toUpperCase()] || cleanLong || "其他";
     const speed = parseInt(parts[idxSpeed] || "0", 10);
     const ping = parseInt(parts[idxPing] || "0", 10);
     const host = (parts[idxHost] || "").trim();
@@ -201,26 +235,30 @@ export async function fetchVpnGate() {
     throw new Error("VPN Gate 列表无可用有效节点");
   }
 
-  // 每个国家精选保留速度最高的前 3 个节点，并生成规范名称（如：VG-日本1, VG-日本2）
-  const byCountry = {};
+  // 统计每个国家的真实总节点列表（已按速度降序排列）
+  const allByCountry = {};
   for (const n of allNodes) {
     const reg = n.country;
-    byCountry[reg] = byCountry[reg] || [];
-    if (byCountry[reg].length < 3) {
-      byCountry[reg].push(n);
-    }
+    (allByCountry[reg] = allByCountry[reg] || []).push(n);
   }
 
   const servers = [];
   const regionsSummary = {};
 
-  for (const [reg, list] of Object.entries(byCountry)) {
+  for (const [reg, allList] of Object.entries(allByCountry)) {
+    // 每个国家按速度降序精选前 3 个优质节点（若不足 3 个则全取）
+    const list = allList.slice(0, 3);
+    const cc = allList[0]?.cc || "";
+    const flag = COUNTRY_FLAG_MAP[reg] || getFlagEmoji(cc);
+
     regionsSummary[reg] = {
       country: reg,
-      cc: list[0]?.cc || "",
-      flag: COUNTRY_FLAG_MAP[reg] || "🌐",
-      count: list.length,
-      maxSpeedMbps: +(list[0]?.speed / 1e6 || 0).toFixed(1),
+      cc,
+      flag,
+      count: allList.length,        // 真实总抓取台数（如日本 58 台、韩国 25 台）
+      totalCount: allList.length,   // 别名
+      selectedCount: list.length,   // 精选启用台数（3台）
+      maxSpeedMbps: +(allList[0]?.speed / 1e6 || 0).toFixed(1),
     };
 
     list.forEach((n, idx) => {

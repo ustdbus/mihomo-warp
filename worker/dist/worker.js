@@ -1385,6 +1385,15 @@ async function fetchWindscribe(account) {
 var VPNGATE_DIRECT = "https://www.vpngate.net/api/iphone/";
 var VPNGATE_MIRROR = "https://p.xy.kg/vpngate";
 var MIRROR_KEY = "8rhIFzFKRJMFAe-xP5OQPclDEvSjKlHo";
+function getFlagEmoji(countryCode) {
+  if (!countryCode || countryCode.length !== 2) return "\u{1F310}";
+  try {
+    const codePoints = countryCode.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
+  } catch {
+    return "\u{1F310}";
+  }
+}
 var COUNTRY_FLAG_MAP = {
   "\u65E5\u672C": "\u{1F1EF}\u{1F1F5}",
   "\u97E9\u56FD": "\u{1F1F0}\u{1F1F7}",
@@ -1402,7 +1411,9 @@ var COUNTRY_FLAG_MAP = {
   "\u8D8A\u5357": "\u{1F1FB}\u{1F1F3}",
   "\u83F2\u5F8B\u5BBE": "\u{1F1F5}\u{1F1ED}",
   "\u9A6C\u6765\u897F\u4E9A": "\u{1F1F2}\u{1F1FE}",
-  "\u5370\u5EA6": "\u{1F1EE}\u{1F1F3}"
+  "\u5370\u5EA6": "\u{1F1EE}\u{1F1F3}",
+  "\u514B\u7F57\u5730\u4E9A": "\u{1F1ED}\u{1F1F7}",
+  "\u5DF4\u897F": "\u{1F1E7}\u{1F1F7}"
 };
 var COUNTRY_NAME_MAP = {
   JP: "\u65E5\u672C",
@@ -1422,7 +1433,25 @@ var COUNTRY_NAME_MAP = {
   PH: "\u83F2\u5F8B\u5BBE",
   MY: "\u9A6C\u6765\u897F\u4E9A",
   ID: "\u5370\u5C3C",
-  IN: "\u5370\u5EA6"
+  IN: "\u5370\u5EA6",
+  HR: "\u514B\u7F57\u5730\u4E9A",
+  BR: "\u5DF4\u897F",
+  NL: "\u8377\u5170",
+  CH: "\u745E\u58EB",
+  UA: "\u4E4C\u514B\u5170",
+  IT: "\u610F\u5927\u5229",
+  ES: "\u897F\u73ED\u7259",
+  MX: "\u58A8\u897F\u54E5",
+  SE: "\u745E\u5178",
+  NO: "\u632A\u5A01",
+  PL: "\u6CE2\u5170",
+  RO: "\u7F57\u9A6C\u5C3C\u4E9A",
+  TR: "\u571F\u8033\u5176",
+  AR: "\u963F\u6839\u5EF7",
+  CL: "\u667A\u5229",
+  CO: "\u54E5\u4F26\u6BD4\u4E9A",
+  ZA: "\u5357\u975E",
+  NZ: "\u65B0\u897F\u5170"
 };
 function parseVpnGateCSV(csvText) {
   const lines = csvText.split(/\r?\n/).filter((l) => {
@@ -1472,7 +1501,8 @@ function parseVpnGateCSV(csvText) {
     const auth = authMatch ? authMatch[1].trim() : "SHA1";
     const cc = (parts[idxCC] || "").trim().toUpperCase();
     const countryLong = (parts[idxCountry] || "").trim();
-    const countryZh = COUNTRY_NAME_MAP[cc] || countryLong || "\u5176\u4ED6";
+    const cleanLong = countryLong.replace(/\s*\([^)]*\)/g, "").trim();
+    const countryZh = COUNTRY_NAME_MAP[cc] || COUNTRY_NAME_MAP[cleanLong.toUpperCase()] || cleanLong || "\u5176\u4ED6";
     const speed = parseInt(parts[idxSpeed] || "0", 10);
     const ping = parseInt(parts[idxPing] || "0", 10);
     const host = (parts[idxHost] || "").trim();
@@ -1548,23 +1578,28 @@ async function fetchVpnGate() {
   if (!allNodes.length) {
     throw new Error("VPN Gate \u5217\u8868\u65E0\u53EF\u7528\u6709\u6548\u8282\u70B9");
   }
-  const byCountry = {};
+  const allByCountry = {};
   for (const n of allNodes) {
     const reg = n.country;
-    byCountry[reg] = byCountry[reg] || [];
-    if (byCountry[reg].length < 3) {
-      byCountry[reg].push(n);
-    }
+    (allByCountry[reg] = allByCountry[reg] || []).push(n);
   }
   const servers = [];
   const regionsSummary = {};
-  for (const [reg, list] of Object.entries(byCountry)) {
+  for (const [reg, allList] of Object.entries(allByCountry)) {
+    const list = allList.slice(0, 3);
+    const cc = allList[0]?.cc || "";
+    const flag = COUNTRY_FLAG_MAP[reg] || getFlagEmoji(cc);
     regionsSummary[reg] = {
       country: reg,
-      cc: list[0]?.cc || "",
-      flag: COUNTRY_FLAG_MAP[reg] || "\u{1F310}",
-      count: list.length,
-      maxSpeedMbps: +(list[0]?.speed / 1e6 || 0).toFixed(1)
+      cc,
+      flag,
+      count: allList.length,
+      // 真实总抓取台数（如日本 58 台、韩国 25 台）
+      totalCount: allList.length,
+      // 别名
+      selectedCount: list.length,
+      // 精选启用台数（3台）
+      maxSpeedMbps: +(allList[0]?.speed / 1e6 || 0).toFixed(1)
     };
     list.forEach((n, idx) => {
       servers.push({
@@ -2096,11 +2131,11 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleRegionListExpand(event)">
         <span class="k" style="display:flex;align-items:center;gap:8px">
           <span>\u843D\u5730\u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u5355\u9009\u843D\u5730 IP\uFF09</span>
-          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">\u6536\u8D77\u5217\u8868 \u25B2</span>
+          <span class="btn-exp" id="btn_toggle_list" style="padding:2px 8px;font-size:11px">\u5C55\u5F00\u5217\u8868 \u25BC</span>
         </span>
         <span class="v ok" id="proton_summary">\u5DF2\u52FE\u9009 ${initialActiveRegions.size} \u4E2A\u5730\u533A (${initialSelectedServerCount} \u53F0\u670D\u52A1\u5668)</span>
       </div>
-      <div id="proton_regions_wrapper">
+      <div id="proton_regions_wrapper" style="display:none">
         <div class="region-list" style="margin:10px 0">
           ${sortedRegions.map((reg) => {
     const srvList = protonServersMap[reg];
@@ -2202,11 +2237,11 @@ function renderUI(state, host, sp, token, cred, pushToken, protonCred, windUsage
       <div class="row" style="margin-top:14px;align-items:center;cursor:pointer" onclick="toggleVgListExpand(event)">
         <span class="k" style="display:flex;align-items:center;gap:8px">
           <span>VPN Gate \u56FD\u5BB6/\u5730\u533A\u9009\u62E9\uFF08\u81EA\u7531\u591A\u9009\uFF0C\u4E0D\u9650\u8FDE\u63A5\u6570\uFF09</span>
-          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">\u6536\u8D77\u5217\u8868 \u25B2</span>
+          <span class="btn-exp" id="btn_toggle_vg_list" style="padding:2px 8px;font-size:11px">\u5C55\u5F00\u5217\u8868 \u25BC</span>
         </span>
         <span class="v ok" id="vg_summary">\u5DF2\u52FE\u9009 ${activeVgRegions.size} \u4E2A\u56FD\u5BB6</span>
       </div>
-      <div id="vg_regions_wrapper">
+      <div id="vg_regions_wrapper" style="display:none">
         <div class="switch-grid" style="margin:10px 0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
           ${Object.values(vpngate.regions || {}).map((item) => {
     const checked = currentVgRegions.includes(item.country);

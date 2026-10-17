@@ -363,11 +363,12 @@ t("新密码能登上",
     Array.isArray(savedSettings.protonRegions) && savedSettings.protonRegions[0] === "日本" &&
     Array.isArray(savedSettings.protonServers) && savedSettings.protonServers[0] === "日本1");
 
-  // 2. 检查首页渲染中是否包含单台服务器单选框与 IP
+  // 2. 检查首页渲染中是否包含单台服务器单选框与 IP，且默认收起
   const page = await (await worker.fetch(req("/", { headers: a7 }), env)).text();
   t("首页渲染中包含可展开服务器单选框与 IP",
     page.includes('name="proton_server_日本" value="日本1"') &&
     page.includes('1.1.1.1'));
+  t("Proton 列表默认收起", page.includes('id="proton_regions_wrapper" style="display:none"'));
 }
 
 // ---- VPN Gate 地区配置与功能开关测试 ----
@@ -406,10 +407,11 @@ t("新密码能登上",
   t("settings 正确持久化 vpngateRegions",
     Array.isArray(savedSettings.vpngateRegions) && savedSettings.vpngateRegions[0] === "日本");
 
-  // 2. 检查首页渲染中是否包含 VPN Gate 区域与复选框
+  // 2. 检查首页渲染中是否包含 VPN Gate 区域与复选框，且默认收起列表
   const page = await (await worker.fetch(req("/", { headers: a8 }), env)).text();
   t("首页渲染中包含 VPN Gate 专属卡片", page.includes("VPN Gate 落地 (开源学术)"));
   t("首页渲染中包含日本复选框", page.includes('name="vpngate_region" value="日本"'));
+  t("VPN Gate 列表默认收起", page.includes('id="vg_regions_wrapper" style="display:none"'));
 
   // 3. 节点开关保存 enableVpnGate
   const rFeat = await worker.fetch(post("/api/settings/features", {
