@@ -102,7 +102,6 @@ function awgNode(name, ip, port, priv, pub, v4, v6, reserved, opt = {}) {
     reserved: ${resStr}
     udp: true
     mtu: 1280
-    dns: [223.5.5.5, 119.29.29.29]
     amnezia-wg-option:
       jc: ${opt.jc || 4}
       jmin: ${opt.jmin || 40}
@@ -303,17 +302,21 @@ dns:
     - 223.5.5.5
     - 119.29.29.29
   nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
     - https://223.5.5.5/dns-query
     - https://1.12.12.12/dns-query
   proxy-server-nameserver:
-    - https://223.5.5.5/dns-query
+    - 223.5.5.5
+    - 119.29.29.29
   nameserver-policy:
     'geosite:cn,private':
+      - 223.5.5.5
+      - 119.29.29.29
       - https://223.5.5.5/dns-query
-      - https://1.12.12.12/dns-query
     'geosite:geolocation-!cn':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query`;
+      - 223.5.5.5
+      - 119.29.29.29`;
 }
 
 function tailGroups(picks) {
